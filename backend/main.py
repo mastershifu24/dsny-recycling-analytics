@@ -544,6 +544,51 @@ def gemini_answer(q: str, label: str, ctx: dict, fallback: str) -> str:
         return fallback
 
 
+def wants_metropt3_question(q: str) -> bool:
+    """Truck / equipment predictive maintenance (MetroPT-3 module), not borough tonnage."""
+    if "metropt" in q or "metro pt" in q:
+        return True
+    if re.search(r"\btrucks?\b", q) and any(
+        x in q
+        for x in (
+            "health",
+            "failure",
+            "risk",
+            "maintenance",
+            "sensor",
+            "model",
+            "predict",
+            "probability",
+            "statistics",
+            "statistic",
+        )
+    ):
+        return True
+    if any(
+        p in q
+        for p in (
+            "predictive maintenance",
+            "equipment health",
+            "vehicle health",
+            "truck health",
+            "fleet health",
+            "machine health",
+            "failure risk",
+            "sensor model",
+            "compressor health",
+            "maintenance model",
+        )
+    ):
+        return True
+    if "svm" in q or "manova" in q:
+        return True
+    if "statistics" in q and re.search(r"\b(truck|fleet|vehicle|equipment|maintenance)\b", q):
+        return True
+    if "model" in q and "health" in q:
+        return True
+    return False
+
+
 def soda_params_analytics(bw: Optional[str]) -> dict:
     p: dict = {"$limit": str(ROW_LIMIT)}
     if IS_TONNAGE:
@@ -731,6 +776,30 @@ def ask():
                 ),
             }
         )
+
+    if wants_metropt3_question(q):
+        try:
+            from metropt3 import metropt3_for_ask
+
+            ctx, fb = metropt3_for_ask()
+            label = (
+                "metropt3_predictive_maintenance: synthetic air-unit demo (not live DSNY fleet telemetry). "
+                "Summarize MANOVA (Wilks lambda, p) and SVM metrics (ROC-AUC, CV, F1, confusion matrix) "
+                "and both scenario_predictions (failure probability for healthy-style vs stressed-style sensors). "
+                "State clearly this is demo / synthetic training data."
+            )
+            return jsonify({"answer": gemini_answer(raw, label, ctx, fb)})
+        except ImportError as e:
+            return jsonify(
+                {
+                    "answer": (
+                        "Truck health / predictive maintenance needs the MetroPT-3 stack installed "
+                        f"(numpy, pandas, scikit-learn, scipy, statsmodels). {e}"
+                    ),
+                }
+            )
+        except Exception as e:
+            return jsonify({"answer": f"Could not load MetroPT-3 model stats: {e}"})
 
     kw = (
         "predict",

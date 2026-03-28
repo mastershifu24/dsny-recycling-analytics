@@ -216,6 +216,105 @@ def predict_from_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def representative_sensor_scenarios() -> dict[str, Any]:
+    """Typical normal vs stressed (failure-like) readings for chat summaries."""
+    typical_normal = {
+        "Oil_temperature": 70.0,
+        "Motor_current": 5.0,
+        "COMP": 1.0,
+        "TP2": 9.0,
+        "TP3": 9.0,
+        "H1": 0.1,
+        "LPS": 0.0,
+        "Oil_level": 1.0,
+    }
+    typical_stress = {
+        "Oil_temperature": 95.0,
+        "Motor_current": 12.0,
+        "COMP": 1.0,
+        "TP2": 4.0,
+        "TP3": 8.0,
+        "H1": 0.8,
+        "LPS": 1.0,
+        "Oil_level": 0.0,
+    }
+    return {
+        "typical_normal": {"input": typical_normal, "prediction": predict_from_row(typical_normal)},
+        "typical_stress": {"input": typical_stress, "prediction": predict_from_row(typical_stress)},
+    }
+
+
+def metropt3_chat_context() -> dict[str, Any]:
+    """Compact JSON for /ask + Gemini (no full training matrix)."""
+    b = get_bundle()
+    manova_res = b["manova"]
+    svm_pkg = b["svm"]
+    rep = svm_pkg["report"]
+    cm = svm_pkg["cm"]
+    wilks = manova_res["multivariate"].get("Status", {}).get("Wilks' lambda", {})
+    uni = manova_res["univariate"]
+    sig = [k for k, v in uni.items() if v["p"] < 0.05]
+
+    return {
+        "domain": "MetroPT-3 synthetic train air-production unit (demo—not live DSNY truck telemetry)",
+        "dataset": {"total": 650, "normal": 500, "failure": 150},
+        "manova": {
+            "wilks_lambda": wilks.get("Value"),
+            "wilks_F": wilks.get("F Value"),
+            "wilks_p": wilks.get("Pr > F"),
+            "significant_continuous_features_p_lt_05": sig,
+        },
+        "svm_model": {
+            "type": "RBF SVM, class-balanced",
+            "roc_auc_holdout": round(float(svm_pkg["auc"]), 4),
+            "roc_auc_cv_5fold_mean": round(float(svm_pkg["cv_mean"]), 4),
+            "roc_auc_cv_5fold_std": round(float(svm_pkg["cv_std"]), 4),
+            "macro_f1": round(float(rep["macro avg"]["f1-score"]), 4),
+            "failure_recall": round(float(rep["1"]["recall"]), 4),
+            "failure_precision": round(float(rep["1"]["precision"]), 4),
+            "confusion_matrix_test": [[int(cm[0, 0]), int(cm[0, 1])], [int(cm[1, 0]), int(cm[1, 1])]],
+            "confusion_note": "rows [actual normal, actual failure]; cols [predicted normal, predicted failure]",
+        },
+        "scenario_predictions": representative_sensor_scenarios(),
+        "full_dashboard_path": "/metropt3",
+    }
+
+
+def metropt3_fallback_answer_text(ctx: dict[str, Any]) -> str:
+    """Plain-text answer when Gemini is off or as backup."""
+    s = ctx["svm_model"]
+    m = ctx["manova"]
+    n = ctx["scenario_predictions"]["typical_normal"]["prediction"]
+    st = ctx["scenario_predictions"]["typical_stress"]["prediction"]
+    wl = m.get("wilks_lambda")
+    wp = m.get("wilks_p")
+    wl_s = f"{wl:.4f}" if wl is not None else "n/a"
+    wp_s = f"{wp:.4g}" if wp is not None else "n/a"
+    sig = m.get("significant_continuous_features_p_lt_05") or []
+    sig_s = ", ".join(sig) if sig else "none listed"
+
+    return (
+        "Predictive maintenance demo (MetroPT-3 style synthetic sensors on an air-production unit). "
+        "This is not live DSNY truck telematics.\n\n"
+        f"Statistics: MANOVA (Wilks' λ = {wl_s}, p = {wp_s}) shows whether normal vs failure groups differ in sensor space. "
+        f"Features with strong separation (univariate p < 0.05 in model): {sig_s}.\n\n"
+        f"Model: RBF SVM — ROC-AUC {s['roc_auc_holdout']:.3f} on holdout; "
+        f"5-fold CV ROC-AUC {s['roc_auc_cv_5fold_mean']:.3f} ± {s['roc_auc_cv_5fold_std']:.3f}; "
+        f"macro F1 {s['macro_f1']:.3f}; failure recall {s['failure_recall']:.3f}, precision {s['failure_precision']:.3f}.\n"
+        f"Test confusion matrix [[TN, FP],[FN, TP]]: {s['confusion_matrix_test']}. {s['confusion_note']}.\n\n"
+        "Example truck-health style predictions (estimated failure probability from the model):\n"
+        f"  • Healthy-style sensor set: {n['probability_failure_pct']:.1f}% failure risk → class {n['class_label']}.\n"
+        f"  • Stressed-style sensor set: {st['probability_failure_pct']:.1f}% failure risk → class {st['class_label']}.\n\n"
+        "Charts, MANOVA tables, and live sliders: open /metropt3 in this app."
+    )
+
+
+def metropt3_for_ask() -> tuple[dict[str, Any], str]:
+    """One-shot bundle for Flask /ask."""
+    ctx = metropt3_chat_context()
+    return ctx, metropt3_fallback_answer_text(ctx)
+
+
 def build_gemini_prompt(
     manova_results: dict[str, Any],
     svm_metrics: dict[str, Any],
