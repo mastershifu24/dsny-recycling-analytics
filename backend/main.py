@@ -572,10 +572,11 @@ def _metropt_paste_ask_response(raw: str, sensor_row: dict[str, Any]):
             + metropt3_paste_operator_fallback(ctx, pred)
         )
         label = (
-            "Sanitation operator readout: The user pasted equipment sensor values. "
-            "Reply in 3–5 short sentences for a crew member or driver: (1) OK vs needs attention in plain words, "
-            "(2) the failure % in everyday language, (3) one realistic next step if this were live fleet data, "
-            "(4) clear disclaimer: practice demo, not DSNY systems. Do not discuss borough tonnage or pickup days."
+            "Simulated fleet / shop health screen (not real telemetry). The user pasted compressor–refrigeration style "
+            "sensor values. Answer like a concise radio or tablet readback to a driver or lead: lamp color (green/amber/red), "
+            "fault % in plain words, one concrete on-the-ground step (walk-around, radio shop, hold unit). "
+            "Sound operational and serious, but state once that this is a training/simulation stack—not DSNY systems, "
+            "not a work order. No borough tonnage or pickup schedule."
         )
         return jsonify({"answer": gemini_answer(raw, label, ctx, fb)})
     except ImportError as e:

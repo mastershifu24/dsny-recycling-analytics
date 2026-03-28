@@ -148,30 +148,65 @@ def parse_metropt_sensor_paste(raw: str) -> Optional[dict[str, Any]]:
     return fill_sensor_row(parsed)
 
 
+def _operator_sensor_snapshot(readings: dict[str, Any]) -> str:
+    """One dense line of values as if from a shop terminal."""
+    bits: list[str] = []
+    for k in FEATURE_COLS:
+        if k not in readings:
+            continue
+        v = readings[k]
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if k == "Oil_temperature":
+            bits.append(f"oil {fv:.1f}°C")
+        elif k == "Motor_current":
+            bits.append(f"motor {fv:.2f} A")
+        elif k == "COMP":
+            bits.append(f"COMP {fv:.0f}")
+        elif k in ("TP2", "TP3"):
+            bits.append(f"{k} {fv:.2f} bar")
+        elif k == "H1":
+            bits.append(f"H1 ΔP {fv:.2f} bar")
+        elif k == "LPS":
+            bits.append(f"LPS {fv:.0f}")
+        elif k == "Oil_level":
+            bits.append(f"oil lvl {fv:.0f}")
+    return " · ".join(bits) if bits else "(no parsed channels)"
+
+
 def metropt3_paste_intro_text(readings: dict[str, Any], pred: dict[str, Any]) -> str:
-    """Plain-text lead when the user pasted sensor readings into /ask (crew-friendly)."""
+    """Plain-text lead when the user pasted sensor readings into /ask (simulated fleet screen)."""
     contribs = pred.get("contributions") or {}
     top = sorted(contribs.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
     cls = pred.get("class_label", "Unknown")
     risk = float(pred.get("probability_failure_pct") or 0)
     if cls == "Normal" and risk < 25:
-        status = "For this practice model, your numbers look like a normal, healthy readout."
+        lamp = "GREEN"
+        status = "Inside normal envelope for this scoring model — no fault class triggered."
+    elif cls == "Failure" or risk >= 40:
+        lamp = "RED"
+        status = "Outside normal envelope — matches the stressed / fault pattern in this training model."
     else:
-        status = "For this practice model, your numbers look closer to the “problem” pattern in the training demo."
+        lamp = "AMBER"
+        status = "Borderline — elevated score vs normal baseline; treat like a watch item in a real yard."
 
     lines = [
-        "Equipment readout (MetroPT-3 practice model — synthetic training data, not live DSNY truck telematics).",
+        "═══ SIMULATED FLEET HEALTH SCREEN · MetroPT-3 (training data only — not live DSNY telematics or OEM bus) ═══",
+        f"Screen status lamp: {lamp} · Model class: {cls}",
         status,
-        f"Estimated failure chance in this demo: {risk:.1f}% — labeled {cls} here.",
+        f"Snapshot: {_operator_sensor_snapshot(readings)}",
+        f"Estimated fault probability (model, same-day window): {risk:.1f}%",
     ]
     df = pred.get("decision_function")
     if df is not None:
         lines.append(
-            f"Mechanics’ margin score: {df:.3f} (higher = leans toward the failure pattern in this demo)."
+            f"SVM decision margin: {df:.3f} (more positive → closer to the fault side of the hyperplane in this demo)."
         )
     if top:
         lines.append(
-            "What pulled the score most (approx., not a repair order): "
+            "Strongest contributors on this pass (weighted score, not volts or PSI by themselves): "
             + ", ".join(f"{FEATURE_LABELS.get(k, k)} ({v:+.2f})" for k, v in top)
             + "."
         )
@@ -179,24 +214,27 @@ def metropt3_paste_intro_text(readings: dict[str, Any], pred: dict[str, Any]) ->
 
 
 def metropt3_paste_operator_fallback(ctx: dict[str, Any], pred: dict[str, Any]) -> str:
-    """When Gemini is off: short backup for pasted readings only (no duplicate model metrics)."""
+    """When Gemini is off: simulated dispatch-style footer (still clearly not real authority)."""
     cls = pred.get("class_label", "Unknown")
     risk = float(pred.get("probability_failure_pct") or 0)
     if cls == "Normal" and risk < 25:
-        next_line = (
-            "If this were real fleet data, you’d keep normal checks and only call the shop when something "
-            "still looks wrong on the truck or in your yard’s process."
+        next_block = (
+            "Operational note (simulated): Condition Green for this screen — you’d typically finish the walk-around, "
+            "confirm no MIL / audible alarms, and roll if fluids and belts match what you see here. "
+            "Log the snapshot if your yard still uses paper or tablet sign-off for auxiliary equipment."
         )
     else:
-        next_line = (
-            "If this were real fleet data, you’d follow your depot’s rules: usually stop, tell a supervisor, "
-            "and let the shop diagnose before you rely on that unit."
+        next_block = (
+            "Operational note (simulated): Condition not cleared for release — you’d hold the unit, "
+            "call it in on the radio, and have shop or a lead mechanic sign off before that truck goes back "
+            "in collection service. Do not use this app as an out-of-service order."
         )
     return (
         "—\n"
-        "Reminder: this is a classroom-style demo. It is not a work order, a safety sign-off, or live DSNY diagnostics.\n"
-        f"{next_line}\n"
-        "Charts and sliders: /metropt3 in this app."
+        "AUTHORITY: SIMULATION ONLY. Not linked to DSNY dispatch, OEM ECU, ABS, or brake systems. "
+        "Does not replace DOT inspection, yard safety rules, or manufacturer bulletins.\n"
+        f"{next_block}\n"
+        "Full gauges + scenario sliders: /metropt3"
     )
 
 
