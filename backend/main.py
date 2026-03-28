@@ -1,5 +1,5 @@
 """
-DSNY Recycling Detection — Flask backend.
+DSNY Recycling Analytics — Flask backend.
 Voice/text UI over NYC Open Data: default DSNY Monthly Tonnage (ebb7-mvp5).
 Override: NYC_SODA_DATASET=c23c-uwsm (SweepNYC). Env: SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """

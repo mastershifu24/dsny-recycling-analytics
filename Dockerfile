@@ -1,4 +1,4 @@
-# DSNY Recycling Detection — Cloud Run image (build from repo root: backend/ + frontend/)
+# DSNY Recycling Analytics — Cloud Run image (build from repo root: backend/ + frontend/)
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DSNY Recycling Detection — local exploration of DSNY Monthly Tonnage (ebb7-mvp5).
+DSNY Recycling Analytics — local exploration of DSNY Monthly Tonnage (ebb7-mvp5).
 Uses sodapy + pandas.shift. pip install pandas sodapy
 Optional: set SOCRATA_APP_TOKEN for higher rate limits.
 """

@@ -1,8 +1,8 @@
-# DSNY Recycling Detection
+# DSNY Recycling Analytics
 
 Voice or text → Flask → **[NYC Open Data SODA](https://data.cityofnewyork.us/)** — default **[DSNY Monthly Tonnage `ebb7-mvp5`](https://data.cityofnewyork.us/d/ebb7-mvp5)** ([preview](https://data.cityofnewyork.us/City-Government/DSNY-Monthly-Tonnage-Data/ebb7-mvp5/data_preview)).
 
-**Repo:** [github.com/mastershifu24/dsny-recycling-detection](https://github.com/mastershifu24/dsny-recycling-detection) — clone folder name can be `dsny-recycling-detection`; code does not depend on the path.
+**Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone as `dsny-recycling-analytics` if you like; paths in code are relative.
 
 The backend **sums `refusetonscollected` by `MONTH`**, then **month-over-month change** vs the previous month (same idea as `pandas.Series.shift(1)`). Optional **Gemini** via `GEMINI_API_KEY`.
 
@@ -59,7 +59,7 @@ python scripts/dsny_tonnage_explore.py
 ## Cloud Run
 
 ```bash
-gcloud run deploy dsny-recycling-detection --source . --region us-central1 --allow-unauthenticated \
+gcloud run deploy dsny-recycling-analytics --source . --region us-central1 --allow-unauthenticated \
   --set-env-vars=NYC_SODA_DATASET=ebb7-mvp5
 ```
 
