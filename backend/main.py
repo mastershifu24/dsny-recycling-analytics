@@ -116,6 +116,31 @@ def linear_next(y: list[float]) -> Optional[float]:
     return max(0.0, sl * n + (ym - sl * xm))
 
 
+def trailing_prior_mean_std(y: list[float], end_exclusive: int, max_window: int = 12) -> tuple[Optional[float], Optional[float], int]:
+    """Mean and sample stdev of y[start:end_exclusive] using up to max_window points; excludes month at end_exclusive."""
+    start = max(0, end_exclusive - max_window)
+    chunk = y[start:end_exclusive]
+    n = len(chunk)
+    if n < 2:
+        return None, None, n
+    m = sum(chunk) / n
+    var = sum((x - m) ** 2 for x in chunk) / (n - 1)
+    std = var**0.5
+    return m, std if std > 1e-9 else None, n
+
+
+def pressure_band_from_z(z: float) -> str:
+    if z < -2:
+        return "far_below_typical"
+    if z < -1:
+        return "below_typical"
+    if z <= 1:
+        return "typical"
+    if z <= 2:
+        return "above_typical"
+    return "far_above_typical"
+
+
 def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any]:
     if IS_TONNAGE:
         by: dict[tuple[int, int], float] = defaultdict(float)
@@ -129,29 +154,61 @@ def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any
             except (TypeError, ValueError):
                 pass
         keys = sorted(by.keys())
+        yv = [by[k] for k in keys]
         series = []
         prev = None
-        for k in keys:
+        for i, k in enumerate(keys):
             val = by[k]
-            series.append(
-                {
-                    "month": f"{k[0]}-{k[1]:02d}",
-                    "refuse_tons_sum_in_sample": round(val, 1),
-                    "shift_prev_month_refuse_tons": round(prev, 1) if prev is not None else None,
-                    "month_over_month_change_tons": round(val - prev, 1) if prev is not None else None,
-                    "month_over_month_change_pct": round((val - prev) / prev * 100, 1)
-                    if prev and prev > 0
-                    else None,
-                }
-            )
+            yoy_k = (k[0] - 1, k[1])
+            yoy_val = by.get(yoy_k)
+            tm, ts, tn = trailing_prior_mean_std(yv, i, 12)
+            row: dict[str, Any] = {
+                "month": f"{k[0]}-{k[1]:02d}",
+                "refuse_tons_sum_in_sample": round(val, 1),
+                "shift_prev_month_refuse_tons": round(prev, 1) if prev is not None else None,
+                "month_over_month_change_tons": round(val - prev, 1) if prev is not None else None,
+                "month_over_month_change_pct": round((val - prev) / prev * 100, 1)
+                if prev and prev > 0
+                else None,
+            }
+            if yoy_val is not None:
+                row["refuse_tons_same_month_prior_year"] = round(yoy_val, 1)
+                row["year_over_year_change_tons"] = round(val - yoy_val, 1)
+                row["year_over_year_change_pct"] = round((val - yoy_val) / yoy_val * 100, 1) if yoy_val > 0 else None
+            if tm is not None:
+                row["trailing_prior_months_used"] = tn
+                row["trailing_mean_refuse_tons_prior"] = round(tm, 1)
+                row["trailing_stdev_refuse_tons_prior"] = round(ts, 2) if ts is not None else None
+                if ts:
+                    row["z_score_vs_trailing_prior"] = round((val - tm) / ts, 2)
+            series.append(row)
             prev = val
-        yv = [by[k] for k in keys]
+
         na = sum(yv[-3:]) / min(3, len(yv)) if yv else None
+        pressure: dict[str, Any] = {"note": "Z-score vs mean of up to 12 prior months in this sample (not official risk)."}
+        n = len(yv)
+        if n >= 1:
+            pressure["latest_month"] = series[-1]["month"]
+            pressure["latest_refuse_tons"] = series[-1]["refuse_tons_sum_in_sample"]
+            pm, ps, pn = trailing_prior_mean_std(yv, n - 1, 12)
+            pressure["prior_months_used_for_baseline"] = pn
+            if pm is not None:
+                pressure["baseline_mean_refuse_tons"] = round(pm, 1)
+            if ps is not None:
+                pressure["baseline_stdev_refuse_tons"] = round(ps, 2)
+                z_last = (yv[-1] - pm) / ps if pm is not None else None
+                if z_last is not None:
+                    pressure["pressure_z_score"] = round(z_last, 2)
+                    pressure["pressure_band"] = pressure_band_from_z(z_last)
+            if pressure.get("pressure_band") is None:
+                pressure["pressure_band"] = "insufficient_history"
+
         return {
             "kind": "tonnage",
             "sample_rows_used": len(rows),
             "borough_filter_note": borough_note or "all boroughs in sample",
             "monthly_with_shift": series,
+            "pressure_risk": pressure,
             "naive_next_month_tons": round(na, 1) if na is not None else None,
             "linear_next_month_tons": round(linear_next(yv[-6:] if len(yv) >= 6 else yv), 1)
             if len(yv) >= 2
@@ -188,7 +245,17 @@ def format_summary_text(s: dict[str, Any]) -> str:
         bits = [f"{x['month']}: {x['refuse_tons_sum_in_sample']}t refuse" for x in tail]
         last = (s.get("monthly_with_shift") or [])[-1:] or [{}]
         mom = last[0].get("month_over_month_change_tons")
+        yoy = last[0].get("year_over_year_change_tons")
+        pr = s.get("pressure_risk") or {}
+        z = pr.get("pressure_z_score")
+        band = pr.get("pressure_band")
         extra = f" Latest MoM Δ {mom}t." if mom is not None else ""
+        if yoy is not None:
+            extra += f" YoY Δ {yoy}t."
+        if z is not None and band:
+            extra += f" Pressure z={z} ({band})."
+        elif band == "insufficient_history":
+            extra += " Need more months in sample for pressure z-score."
         return f"{head} Scope: {s.get('borough_filter_note')}. " + "; ".join(bits) + extra + " " + s.get("disclaimer", "")
     mc = s.get("monthly_visit_counts") or []
     tail = mc[-4:]
