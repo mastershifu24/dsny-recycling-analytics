@@ -163,6 +163,7 @@ hr{border:none;border-top:1px solid var(--bdr2);margin:14px 0}
 .btnp:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
 .btns{background:var(--bg2);color:var(--txt);border:1px solid var(--bdr);padding:9px 16px;border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
 .btns:hover{background:var(--bg3)}
+.paste-ta{width:100%;min-height:96px;padding:10px 12px;border:1px solid var(--bdr);border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:12px;resize:vertical;margin-top:8px;background:var(--bg3);color:var(--txt)}
 .rbox{
   background:var(--bg3);
   border:1px solid var(--bdr2);
@@ -204,11 +205,10 @@ a.nav-back:hover{text-decoration:underline}
     <span style="font-size:11px;color:var(--mut);font-family:'JetBrains Mono',monospace">v2.1 · API</span>
     <a class="nav-back" href="/">← DSNY Recycling Analytics</a>
   </div>
-  <div class="hdr-sub">SVM · MANOVA · Gemini (server) — data from <code>/api/metropt3/*</code> (Flask + sklearn)</div>
+  <div class="hdr-sub">RBF SVM · Gemini (server) — <code>/api/metropt3/*</code> (Flask + sklearn)</div>
   <div id="banner"></div>
   <div class="tabs">
     <button class="tab on" onclick="sw('eda',this)">EDA</button>
-    <button class="tab" onclick="sw('manova',this)">MANOVA</button>
     <button class="tab" onclick="sw('predict',this)">Predict &amp; explain</button>
     <button class="tab" onclick="sw('ai',this)">AI interpretation</button>
   </div>
@@ -238,35 +238,6 @@ a.nav-back:hover{text-decoration:underline}
   <div class="card"><div class="ctitle">Descriptive statistics by class</div><div style="overflow-x:auto"><table class="dt" id="stats-tbl"></table></div></div>
 </div>
 
-<div class="pane" id="p-manova">
-  <div class="card" style="margin-bottom:14px">
-    <div class="ctitle">Multivariate tests (from server MANOVA)</div>
-    <div style="overflow-x:auto"><table class="dt" id="manova-tbl"></table></div>
-  </div>
-  <div class="g2">
-    <div class="card">
-      <div class="ctitle">Univariate ANOVA — −log₁₀(p) per feature</div>
-      <div class="cw" style="height:250px"><canvas id="ch-pval"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="ctitle">Per-feature significance</div>
-      <div style="overflow-x:auto"><table class="dt" id="uni-tbl"></table></div>
-    </div>
-  </div>
-  <div class="card" style="margin-top:14px">
-    <div class="ctitle">MANOVA statistics reference</div>
-    <table class="dt">
-      <thead><tr><th>Test</th><th>Formula</th><th>Interpretation</th></tr></thead>
-      <tbody>
-        <tr><td style="font-weight:500">Wilks' λ</td><td class="mono">det(W) / det(W+B)</td><td style="color:var(--mut)">0 = strong separation · 1 = none</td></tr>
-        <tr><td style="font-weight:500">Pillai's trace</td><td class="mono">Σ λᵢ/(1+λᵢ)</td><td style="color:var(--mut)">Robust to non-normality</td></tr>
-        <tr><td style="font-weight:500">Hotelling–Lawley</td><td class="mono">Σ λᵢ</td><td style="color:var(--mut)">Powerful when assumptions hold</td></tr>
-        <tr><td style="font-weight:500">Roy's GCR</td><td class="mono">max(λᵢ)</td><td style="color:var(--mut)">Sensitive to outliers</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
 <div class="pane" id="p-predict">
   <div class="g4" style="margin-bottom:14px">
     <div class="met"><div class="met-l">ROC-AUC</div><div class="met-v tc" id="m-auc">—</div></div>
@@ -291,6 +262,17 @@ a.nav-back:hover{text-decoration:underline}
       <div class="selr"><label>Compressor (COMP)</label><select id="s-comp" onchange="rp()"><option value="1">1 — active</option><option value="0">0 — off</option></select></div>
       <div class="selr"><label>Low-pressure switch (LPS)</label><select id="s-lps" onchange="rp()"><option value="0">0 — normal</option><option value="1">1 — triggered</option></select></div>
       <div class="selr"><label>Oil level</label><select id="s-oil" onchange="rp()"><option value="1">1 — normal</option><option value="0">0 — low</option></select></div>
+      <hr style="margin:14px 0;border:none;border-top:1px solid var(--bdr2)">
+      <p style="font-size:10.5px;font-weight:500;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Paste readings (tabs, labels, or JSON)</p>
+      <textarea id="paste-readings" class="paste-ta" spellcheck="false" placeholder='Oil temperature	70.31
+Motor current	5.15
+COMP	0.80
+TP2 pressure	8.91
+TP3 pressure	9.03
+H1	0.1
+LPS	0
+Oil level	1'></textarea>
+      <button type="button" class="btns" style="margin-top:10px" onclick="applyPastedReadings()">Apply pasted values &amp; predict</button>
     </div>
     <div>
       <div class="card" style="margin-bottom:14px">
@@ -412,6 +394,74 @@ async function loadDiag() {
 
 function sv(id, v, dp) { document.getElementById(id).textContent = parseFloat(v).toFixed(dp); }
 
+function labelToSensorKey(name) {
+  const n = name.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (/oil\s*temp/.test(n)) return 'Oil_temperature';
+  if (/motor\s*current/.test(n)) return 'Motor_current';
+  if (/^comp|^compressor/.test(n)) return 'COMP';
+  if (/tp2/.test(n)) return 'TP2';
+  if (/tp3/.test(n)) return 'TP3';
+  if (/\bh1\b/.test(n)) return 'H1';
+  if (/lps|low-pressure/.test(n)) return 'LPS';
+  if (/oil\s*level/.test(n)) return 'Oil_level';
+  return null;
+}
+
+function setRangeSensor(sid, vid, val, dp) {
+  const s = document.getElementById(sid);
+  if (!s) return;
+  const mn = parseFloat(s.min), mx = parseFloat(s.max);
+  const v = Math.max(mn, Math.min(mx, val));
+  s.value = v;
+  if (vid) sv(vid, v, dp);
+}
+
+function setBinarySelect(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const n = Number(val);
+  el.value = !isFinite(n) || n >= 0.5 ? '1' : '0';
+}
+
+function applyPastedReadings() {
+  const ta = document.getElementById('paste-readings');
+  if (!ta) return;
+  const raw = ta.value.trim();
+  if (!raw) return;
+  let parsed = {};
+  try {
+    if (raw.trim().startsWith('{')) {
+      const o = JSON.parse(raw);
+      const keys = ['Oil_temperature', 'Motor_current', 'COMP', 'TP2', 'TP3', 'H1', 'LPS', 'Oil_level'];
+      for (const k of keys) {
+        if (o[k] !== undefined && o[k] !== null) parsed[k] = Number(o[k]);
+      }
+    } else {
+      for (const line of raw.split(/\n/)) {
+        const t = line.trim();
+        if (!t) continue;
+        let m = t.match(/^(.+?)[\t:]\s*([0-9.]+)\s*$/);
+        if (!m) m = t.match(/^(.+?)\s+([0-9.]+)\s*$/);
+        if (!m) continue;
+        const key = labelToSensorKey(m[1].trim());
+        if (key) parsed[key] = parseFloat(m[2]);
+      }
+    }
+  } catch (e) {
+    alert('Could not parse: ' + e.message);
+    return;
+  }
+  if (parsed.Oil_temperature != null) setRangeSensor('s-ot', 'v-ot', parsed.Oil_temperature, 1);
+  if (parsed.Motor_current != null) setRangeSensor('s-mc', 'v-mc', parsed.Motor_current, 1);
+  if (parsed.TP2 != null) setRangeSensor('s-t2', 'v-t2', parsed.TP2, 1);
+  if (parsed.TP3 != null) setRangeSensor('s-t3', 'v-t3', parsed.TP3, 1);
+  if (parsed.H1 != null) setRangeSensor('s-h1', 'v-h1', parsed.H1, 2);
+  if (parsed.COMP != null) setBinarySelect('s-comp', parsed.COMP);
+  if (parsed.LPS != null) setBinarySelect('s-lps', parsed.LPS);
+  if (parsed.Oil_level != null) setBinarySelect('s-oil', parsed.Oil_level);
+  rp();
+}
+
 function getRowObject() {
   return {
     Oil_temperature: parseFloat(document.getElementById('s-ot').value),
@@ -474,35 +524,6 @@ function buildStatsTable() {
     tb.appendChild(tr);
   });
   t.appendChild(tb);
-}
-
-function renderManova() {
-  const mt = document.getElementById('manova-tbl');
-  mt.innerHTML = '<thead><tr><th>Effect</th><th>Test</th><th>Value</th><th>F</th><th>Num DF</th><th>Den DF</th><th>p</th><th>Result</th></tr></thead>';
-  const mb = document.createElement('tbody');
-  for (const row of DIAG.manova.table_rows) {
-    const sig = row.significant;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="mono">${row.effect}</td><td>${row.test}</td><td class="mono">${row.value != null ? row.value.toFixed(5) : '—'}</td><td class="mono">${row.f_value != null ? row.f_value.toFixed(3) : '—'}</td><td class="mono">${row.num_df != null ? row.num_df : '—'}</td><td class="mono">${row.den_df != null ? row.den_df : '—'}</td><td class="mono" style="color:${sig ? '#e11d48' : '#64748b'}">${row.p_value != null ? Number(row.p_value).toFixed(6) : '—'}</td><td><span class="badge ${sig ? 'br' : 'ba'}">${sig ? 'Significant' : 'Not sig.'}</span></td>`;
-    mb.appendChild(tr);
-  }
-  mt.appendChild(mb);
-
-  const ut = document.getElementById('uni-tbl');
-  ut.innerHTML = '<thead><tr><th>Feature</th><th>F</th><th>p</th><th>Sig.</th></tr></thead>';
-  const ub = document.createElement('tbody');
-  for (const row of DIAG.manova.univariate_rows) {
-    const sig = row.significant;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="font-weight:500">${row.label}</td><td class="mono">${row.F}</td><td class="mono" style="color:${sig ? 'var(--red)' : 'var(--mut)'}">${row.p.toFixed(6)}</td><td><span class="badge ${sig ? 'bg' : 'ba'}">${sig ? 'Yes' : 'No'}</span></td>`;
-    ub.appendChild(tr);
-  }
-  ut.appendChild(ub);
-
-  const sorted = [...DIAG.manova.univariate_rows].sort((a, b) => a.p - b.p);
-  const logP = sorted.map(u => +(-Math.log10(u.p + 1e-300)).toFixed(2));
-  const thresh = -Math.log10(0.05);
-  mkCh('ch-pval', { type: 'bar', data: { labels: sorted.map(u => u.feature), datasets: [{ data: logP, backgroundColor: logP.map(v => v > thresh ? PAL.bad : PAL.neutBar), borderWidth: 0, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY, beginAtZero: true, title: { display: true, text: '−log₁₀(p)', color: PAL.tick, font: { size: 11 } } } } } });
 }
 
 function renderPredict() {
@@ -603,15 +624,14 @@ function speakIt() {
   window.speechSynthesis.speak(utt);
 }
 
-const RENDERED = { eda: false, manova: false, predict: false, ai: false };
+const RENDERED = { eda: false, predict: false, ai: false };
 function sw(id, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
   document.getElementById('p-' + id).classList.add('on');
   btn.classList.add('on');
   if (!RENDERED[id]) {
-    if (id === 'manova') renderManova();
-    else if (id === 'predict') renderPredict();
+    if (id === 'predict') renderPredict();
     else if (id === 'ai') buildJsonBox();
     RENDERED[id] = true;
   }

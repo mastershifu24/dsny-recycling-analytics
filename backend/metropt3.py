@@ -1,5 +1,5 @@
 """
-MetroPT-3 predictive maintenance — MANOVA + SVM (synthetic MetroPT-style data).
+MetroPT-3 predictive maintenance — RBF SVM only (synthetic MetroPT-style data).
 Used by GET/POST /api/metropt3/*; optional Gemini interpretation via GEMINI_API_KEY.
 """
 
@@ -7,18 +7,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import textwrap
 from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
-from scipy import stats as sp_stats
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
-from statsmodels.multivariate.manova import MANOVA
 
 FEATURE_COLS = [
     "Oil_temperature",
@@ -42,9 +41,132 @@ FEATURE_LABELS = {
     "Oil_level": "Oil level (1=normal)",
 }
 
-CONT_FEATS = ["Oil_temperature", "Motor_current", "TP2", "TP3", "H1"]
-
 _bundle: Optional[dict[str, Any]] = None
+
+# Defaults when user only pastes a subset of sensors (matches training scale)
+_DEFAULT_READINGS: dict[str, Any] = {
+    "Oil_temperature": 70.0,
+    "Motor_current": 5.0,
+    "COMP": 1,
+    "TP2": 9.0,
+    "TP3": 9.0,
+    "H1": 0.1,
+    "LPS": 0,
+    "Oil_level": 1,
+}
+
+
+def label_to_sensor_key(name: str) -> Optional[str]:
+    """Map pasted label text to FEATURE_COLS name."""
+    n = name.lower().replace("\t", " ").strip()
+    n = re.sub(r"\s+", " ", n)
+    if re.search(r"oil\s*temp", n):
+        return "Oil_temperature"
+    if re.search(r"motor\s*current", n):
+        return "Motor_current"
+    if re.match(r"^comp|^compressor", n):
+        return "COMP"
+    if "tp2" in n:
+        return "TP2"
+    if "tp3" in n:
+        return "TP3"
+    if re.search(r"\bh1\b", n):
+        return "H1"
+    if "lps" in n or "low-pressure" in n:
+        return "LPS"
+    if re.search(r"oil\s*level", n):
+        return "Oil_level"
+    return None
+
+
+def fill_sensor_row(partial: dict[str, float]) -> dict[str, Any]:
+    """Merge partial parsed values with defaults; binary features as 0/1."""
+    out = dict(_DEFAULT_READINGS)
+    for k, v in partial.items():
+        if k in ("COMP", "LPS", "Oil_level"):
+            out[k] = int(float(v) >= 0.5)
+        else:
+            out[k] = float(v)
+    return out
+
+
+def parse_metropt_sensor_paste(raw: str) -> Optional[dict[str, Any]]:
+    """
+    Parse tab/line-separated sensor labels + numbers, or JSON with FEATURE_COLS keys.
+    Returns a full row dict for predict_from_row, or None if this does not look like sensor data.
+    """
+    raw = raw.strip()
+    if len(raw) < 6:
+        return None
+
+    parsed: dict[str, float] = {}
+
+    if raw.startswith("{"):
+        try:
+            o = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        for k in FEATURE_COLS:
+            if k in o and o[k] is not None:
+                try:
+                    parsed[k] = float(o[k])
+                except (TypeError, ValueError):
+                    pass
+        if len(parsed) < 2:
+            return None
+        return fill_sensor_row(parsed)
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^(.+?)[\t:]\s*([0-9.]+)\s*$", line, re.I)
+        if not m:
+            m = re.match(r"^(.+?)\s+([0-9.]+)\s*$", line, re.I)
+        if not m:
+            continue
+        key = label_to_sensor_key(m.group(1).strip())
+        if key:
+            parsed[key] = float(m.group(2))
+
+    if len(parsed) < 2:
+        for m in re.finditer(
+            r"(?i)(oil\s*temperature|motor\s*current|tp2\s*pressure|tp3\s*pressure|tp2|tp3|h1|lps|comp|oil\s*level|compressor)\s*[:\t]?\s*([0-9.]+)",
+            raw,
+        ):
+            key = label_to_sensor_key(m.group(1).strip())
+            if key:
+                parsed[key] = float(m.group(2))
+
+    if len(parsed) < 2:
+        return None
+    if not any(
+        k in parsed
+        for k in ("Oil_temperature", "Motor_current", "TP2", "TP3", "COMP", "H1")
+    ):
+        return None
+    return fill_sensor_row(parsed)
+
+
+def metropt3_paste_intro_text(readings: dict[str, Any], pred: dict[str, Any]) -> str:
+    """Plain-text lead when the user pasted sensor readings into /ask."""
+    contribs = pred.get("contributions") or {}
+    top = sorted(contribs.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+    lines = [
+        "MetroPT-3 demo (synthetic training data—not live DSNY fleet telemetry).",
+        f"From your readings, the RBF SVM estimates {pred['probability_failure_pct']:.1f}% failure risk → {pred['class_label']}.",
+    ]
+    df = pred.get("decision_function")
+    if df is not None:
+        lines.append(f"Decision margin: {df:.4f} (more positive → more toward failure).")
+    if top:
+        lines.append(
+            "Approx. feature contributions: "
+            + ", ".join(f"{k} ({v:+.3f})" for k, v in top)
+            + "."
+        )
+    lines.append("Full charts & paste box: open /metropt3")
+    return "\n".join(lines)
 
 
 def load_dataset() -> pd.DataFrame:
@@ -77,36 +199,6 @@ def load_dataset() -> pd.DataFrame:
     )
     df = pd.concat([normal, failure], ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
     return df
-
-
-def run_manova(df: pd.DataFrame) -> dict[str, Any]:
-    cont_df = df[CONT_FEATS + ["Status"]].copy()
-    formula = " + ".join(CONT_FEATS) + " ~ Status"
-    maov = MANOVA.from_formula(formula, data=cont_df)
-    result = maov.mv_test()
-
-    parsed: dict[str, Any] = {}
-    for effect_name, effect_result in result.results.items():
-        parsed[effect_name] = {}
-        stat_table = effect_result["stat"]
-        for test_name in stat_table.index:
-            row = stat_table.loc[test_name]
-            parsed[effect_name][test_name] = {
-                "Value": round(float(row["Value"]), 5),
-                "F Value": round(float(row["F Value"]), 4),
-                "Num DF": float(row["Num DF"]),
-                "Den DF": round(float(row["Den DF"]), 2),
-                "Pr > F": float(f"{row['Pr > F']:.6g}"),
-            }
-
-    uni: dict[str, Any] = {}
-    for col in CONT_FEATS:
-        g0 = df.loc[df.Status == 0, col]
-        g1 = df.loc[df.Status == 1, col]
-        f_stat, p = sp_stats.f_oneway(g0, g1)
-        uni[col] = {"F": round(float(f_stat), 3), "p": float(f"{p:.4g}")}
-
-    return {"multivariate": parsed, "univariate": uni}
 
 
 def train_svm(df: pd.DataFrame) -> dict[str, Any]:
@@ -143,7 +235,6 @@ def train_svm(df: pd.DataFrame) -> dict[str, Any]:
     cm = confusion_matrix(y_te, y_pred)
     auc = float(roc_auc_score(y_te, y_prob))
 
-    scaler = pipe.named_steps["scaler"]
     svm_ = pipe.named_steps["svm"]
     sv_coef = svm_.dual_coef_
     sv_vecs = svm_.support_vectors_
@@ -152,7 +243,6 @@ def train_svm(df: pd.DataFrame) -> dict[str, Any]:
 
     return {
         "pipeline": pipe,
-        "scaler": scaler,
         "report": report,
         "cm": cm,
         "auc": auc,
@@ -176,11 +266,7 @@ def get_bundle() -> dict[str, Any]:
     global _bundle
     if _bundle is None:
         df = load_dataset()
-        _bundle = {
-            "df": df,
-            "manova": run_manova(df),
-            "svm": train_svm(df),
-        }
+        _bundle = {"df": df, "svm": train_svm(df)}
     return _bundle
 
 
@@ -200,12 +286,9 @@ def predict_from_row(row: dict[str, Any]) -> dict[str, Any]:
     pred = int(pipe.predict(input_row)[0])
     prob = float(pipe.predict_proba(input_row)[0, 1])
     contribs = _contrib_for_row(pipe, input_row)
-    if hasattr(pipe, "decision_function"):
-        try:
-            dec = float(pipe.decision_function(input_row)[0])
-        except Exception:
-            dec = None
-    else:
+    try:
+        dec = float(pipe.decision_function(input_row)[0])
+    except Exception:
         dec = None
     return {
         "class": pred,
@@ -217,7 +300,6 @@ def predict_from_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def representative_sensor_scenarios() -> dict[str, Any]:
-    """Typical normal vs stressed (failure-like) readings for chat summaries."""
     typical_normal = {
         "Oil_temperature": 70.0,
         "Motor_current": 5.0,
@@ -247,25 +329,17 @@ def representative_sensor_scenarios() -> dict[str, Any]:
 def metropt3_chat_context() -> dict[str, Any]:
     """Compact JSON for /ask + Gemini (no full training matrix)."""
     b = get_bundle()
-    manova_res = b["manova"]
     svm_pkg = b["svm"]
     rep = svm_pkg["report"]
     cm = svm_pkg["cm"]
-    wilks = manova_res["multivariate"].get("Status", {}).get("Wilks' lambda", {})
-    uni = manova_res["univariate"]
-    sig = [k for k, v in uni.items() if v["p"] < 0.05]
+    fw = svm_pkg["feat_weights"]
+    top_feats = sorted(fw.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
 
     return {
         "domain": "MetroPT-3 synthetic train air-production unit (demo—not live DSNY truck telemetry)",
         "dataset": {"total": 650, "normal": 500, "failure": 150},
-        "manova": {
-            "wilks_lambda": wilks.get("Value"),
-            "wilks_F": wilks.get("F Value"),
-            "wilks_p": wilks.get("Pr > F"),
-            "significant_continuous_features_p_lt_05": sig,
-        },
         "svm_model": {
-            "type": "RBF SVM, class-balanced",
+            "type": "RBF SVM (class-balanced), only model in this demo",
             "roc_auc_holdout": round(float(svm_pkg["auc"]), 4),
             "roc_auc_cv_5fold_mean": round(float(svm_pkg["cv_mean"]), 4),
             "roc_auc_cv_5fold_std": round(float(svm_pkg["cv_std"]), 4),
@@ -274,6 +348,7 @@ def metropt3_chat_context() -> dict[str, Any]:
             "failure_precision": round(float(rep["1"]["precision"]), 4),
             "confusion_matrix_test": [[int(cm[0, 0]), int(cm[0, 1])], [int(cm[1, 0]), int(cm[1, 1])]],
             "confusion_note": "rows [actual normal, actual failure]; cols [predicted normal, predicted failure]",
+            "top_svm_features_by_abs_weight": [{"feature": k, "weight": round(v, 4)} for k, v in top_feats],
         },
         "scenario_predictions": representative_sensor_scenarios(),
         "full_dashboard_path": "/metropt3",
@@ -283,29 +358,23 @@ def metropt3_chat_context() -> dict[str, Any]:
 def metropt3_fallback_answer_text(ctx: dict[str, Any]) -> str:
     """Plain-text answer when Gemini is off or as backup."""
     s = ctx["svm_model"]
-    m = ctx["manova"]
     n = ctx["scenario_predictions"]["typical_normal"]["prediction"]
     st = ctx["scenario_predictions"]["typical_stress"]["prediction"]
-    wl = m.get("wilks_lambda")
-    wp = m.get("wilks_p")
-    wl_s = f"{wl:.4f}" if wl is not None else "n/a"
-    wp_s = f"{wp:.4g}" if wp is not None else "n/a"
-    sig = m.get("significant_continuous_features_p_lt_05") or []
-    sig_s = ", ".join(sig) if sig else "none listed"
+    tops = s.get("top_svm_features_by_abs_weight") or []
+    top_s = ", ".join(f"{x['feature']} ({x['weight']:+.3f})" for x in tops[:3]) or "n/a"
 
     return (
         "Predictive maintenance demo (MetroPT-3 style synthetic sensors on an air-production unit). "
         "This is not live DSNY truck telematics.\n\n"
-        f"Statistics: MANOVA (Wilks' λ = {wl_s}, p = {wp_s}) shows whether normal vs failure groups differ in sensor space. "
-        f"Features with strong separation (univariate p < 0.05 in model): {sig_s}.\n\n"
-        f"Model: RBF SVM — ROC-AUC {s['roc_auc_holdout']:.3f} on holdout; "
+        f"Model: RBF SVM only — ROC-AUC {s['roc_auc_holdout']:.3f} on holdout; "
         f"5-fold CV ROC-AUC {s['roc_auc_cv_5fold_mean']:.3f} ± {s['roc_auc_cv_5fold_std']:.3f}; "
         f"macro F1 {s['macro_f1']:.3f}; failure recall {s['failure_recall']:.3f}, precision {s['failure_precision']:.3f}.\n"
+        f"Largest |weight| SVM features (approx.): {top_s}.\n"
         f"Test confusion matrix [[TN, FP],[FN, TP]]: {s['confusion_matrix_test']}. {s['confusion_note']}.\n\n"
-        "Example truck-health style predictions (estimated failure probability from the model):\n"
-        f"  • Healthy-style sensor set: {n['probability_failure_pct']:.1f}% failure risk → class {n['class_label']}.\n"
-        f"  • Stressed-style sensor set: {st['probability_failure_pct']:.1f}% failure risk → class {st['class_label']}.\n\n"
-        "Charts, MANOVA tables, and live sliders: open /metropt3 in this app."
+        "Example readings (estimated failure probability):\n"
+        f"  • Healthy-style sensors: {n['probability_failure_pct']:.1f}% failure risk → {n['class_label']}.\n"
+        f"  • Stressed-style sensors: {st['probability_failure_pct']:.1f}% failure risk → {st['class_label']}.\n\n"
+        "Charts and live sliders: open /metropt3 in this app."
     )
 
 
@@ -316,27 +385,23 @@ def metropt3_for_ask() -> tuple[dict[str, Any], str]:
 
 
 def build_gemini_prompt(
-    manova_results: dict[str, Any],
     svm_metrics: dict[str, Any],
     current_input: Optional[dict[str, Any]] = None,
     prediction: Optional[dict[str, Any]] = None,
 ) -> str:
-    mw = manova_results["multivariate"].get("Status", {})
-    uni = manova_results["univariate"]
     rep = svm_metrics["report"]
     feat = svm_metrics["feat_weights"]
-
-    sig_feats = [f for f, v in uni.items() if v["p"] < 0.05]
-    wilks = mw.get("Wilks' lambda", {})
 
     return textwrap.dedent(
         f"""
     You are a senior reliability engineer interpreting predictive-maintenance
     diagnostics for the MetroPT-3 train air-production unit dataset.
 
-    Speak in clear, technical but accessible English.  Structure your response
-    as three short paragraphs:
-      1. Statistical significance (MANOVA findings)
+    The ONLY classifier in this pipeline is an RBF kernel SVM (balanced classes).
+
+    Speak in clear, technical but accessible English. Structure your response as
+    two short paragraphs plus a third if sensor data is provided:
+      1. What the SVM is doing and which features drive the boundary (use weights below)
       2. Model performance and what it means operationally
       3. Current sensor reading interpretation (if provided)
 
@@ -346,24 +411,6 @@ def build_gemini_prompt(
               TP2 pressure, TP3 pressure, H1 pressure drop,
               Low-pressure switch (LPS), Oil level.
 
-    ── MANOVA RESULTS ──────────────────────────────────────────────────────
-    Wilks' lambda : {wilks.get("Value", "N/A")}
-    F value       : {wilks.get("F Value", "N/A")}
-    Num DF        : {wilks.get("Num DF", "N/A")}
-    Den DF        : {wilks.get("Den DF", "N/A")}
-    p-value       : {wilks.get("Pr > F", "N/A")}
-
-    Interpretation hint:
-      Wilks' lambda close to 0 = strong group separation.
-      p < 0.05 = the Normal vs Failure means differ significantly
-                 across the multivariate feature space.
-
-    Univariate ANOVA (per feature):
-    {json.dumps(uni, indent=2)}
-
-    Features with statistically significant difference (p < 0.05):
-    {", ".join(sig_feats) if sig_feats else "None"}
-
     ── SVM MODEL PERFORMANCE ───────────────────────────────────────────────
     Kernel         : RBF  |  C=10  |  class_weight=balanced
     ROC-AUC        : {svm_metrics["auc"]:.4f}
@@ -372,7 +419,7 @@ def build_gemini_prompt(
     Precision-1    : {rep["1"]["precision"]:.3f}   Recall-1 : {rep["1"]["recall"]:.3f}
     Macro F1       : {rep["macro avg"]["f1-score"]:.3f}
 
-    Top feature weights (approximate, from SVM dual coefficients):
+    Feature weights (approximate, from SVM dual coefficients, L1-normalized):
     {json.dumps({k: round(v, 4) for k, v in sorted(feat.items(), key=lambda x: abs(x[1]), reverse=True)}, indent=2)}
     Positive weight → pushes toward failure.
     Negative weight → pushes toward normal.
@@ -384,9 +431,8 @@ def build_gemini_prompt(
     {json.dumps(prediction, indent=2) if prediction else "No prediction requested."}
 
     ── YOUR TASK ────────────────────────────────────────────────────────────
-    Write a concise diagnostic report (≤ 200 words) covering the three
-    paragraphs above.  End with one actionable maintenance recommendation.
-    Do NOT reproduce raw numbers verbatim — synthesise them into insight.
+    Write a concise diagnostic report (≤ 200 words). End with one actionable
+    maintenance recommendation. Do NOT reproduce raw numbers verbatim — synthesise insight.
     """
     ).strip()
 
@@ -394,7 +440,6 @@ def build_gemini_prompt(
 def diagnostics_payload() -> dict[str, Any]:
     b = get_bundle()
     df = b["df"]
-    manova_res = b["manova"]
     svm_pkg = b["svm"]
     cm = svm_pkg["cm"]
     rep = svm_pkg["report"]
@@ -402,39 +447,9 @@ def diagnostics_payload() -> dict[str, Any]:
     X_list = df[FEATURE_COLS].values.tolist()
     y_list = [int(x) for x in df["Status"].tolist()]
 
-    manova_rows = []
-    for effect, tests in manova_res["multivariate"].items():
-        for test_name, stats in tests.items():
-            pval = stats.get("Pr > F", 1.0)
-            manova_rows.append(
-                {
-                    "effect": effect,
-                    "test": test_name,
-                    "value": stats.get("Value"),
-                    "f_value": stats.get("F Value"),
-                    "num_df": stats.get("Num DF"),
-                    "den_df": stats.get("Den DF"),
-                    "p_value": pval,
-                    "significant": bool(pval < 0.05),
-                }
-            )
-
-    uni_rows = []
-    for feat, v in manova_res["univariate"].items():
-        uni_rows.append(
-            {
-                "feature": feat,
-                "label": FEATURE_LABELS.get(feat, feat),
-                "F": v["F"],
-                "p": v["p"],
-                "significant": bool(v["p"] < 0.05),
-            }
-        )
-
     return {
         "feature_cols": FEATURE_COLS,
         "feature_labels": FEATURE_LABELS,
-        "cont_feats": CONT_FEATS,
         "dataset": {
             "total": len(df),
             "normal": int((df.Status == 0).sum()),
@@ -442,12 +457,6 @@ def diagnostics_payload() -> dict[str, Any]:
         },
         "X": X_list,
         "y": y_list,
-        "manova": {
-            "multivariate": manova_res["multivariate"],
-            "univariate": manova_res["univariate"],
-            "table_rows": manova_rows,
-            "univariate_rows": uni_rows,
-        },
         "svm": {
             "auc": svm_pkg["auc"],
             "cv_mean": svm_pkg["cv_mean"],
@@ -470,7 +479,7 @@ def call_gemini_interpret(
     if not os.environ.get("GEMINI_API_KEY", "").strip():
         return "", "Set GEMINI_API_KEY on the server for AI interpretation."
     b = get_bundle()
-    prompt = build_gemini_prompt(b["manova"], b["svm"], current_input, prediction)
+    prompt = build_gemini_prompt(b["svm"], current_input, prediction)
     try:
         import google.generativeai as genai
 

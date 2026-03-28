@@ -223,7 +223,7 @@
       <ul class="examples">
         <li>“Bronx garbage trend month over month”</li>
         <li>“Queens recycling tons last year”</li>
-        <li>“Truck health statistics” or “predictive maintenance model” (MetroPT-3 demo: SVM + MANOVA + sample failure risk)</li>
+        <li>“Truck health statistics” or “predictive maintenance model” (MetroPT-3 demo: RBF SVM + sample failure risk)</li>
         <li>“When is garbage pickup” (then use an <strong>address</strong> for your stop)</li>
       </ul>
       <p class="links" style="margin-top:0.75rem">
@@ -255,8 +255,8 @@
     <section class="card" aria-labelledby="text-h">
       <h2 id="text-h">Type a question</h2>
       <label for="textQ">Your question</label>
-      <textarea id="textQ" placeholder="Example: Bronx garbage tons trend."></textarea>
-      <p class="hint">Tip: <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> to send</p>
+      <textarea id="textQ" placeholder="Bronx garbage trend, pickup schedule, or paste MetroPT sensors (Oil temp / Motor current / TP2…)."></textarea>
+      <p class="hint">Tip: <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> to send · sensor paste uses the same box as questions</p>
       <button type="button" id="sendBtn">Get answer</button>
     </section>
 

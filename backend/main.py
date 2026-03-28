@@ -594,6 +594,12 @@ def wants_metropt3_question(q: str) -> bool:
         return True
     if "model" in q and "health" in q:
         return True
+    # Pasted or spoken MetroPT-style sensor lines (main app textarea)
+    if re.search(r"\b(oil\s*temperature|motor\s*current|tp2|tp3|compressor|oil\s*level)\b", q) and re.search(
+        r"\d",
+        q,
+    ):
+        return True
     return False
 
 
@@ -795,6 +801,14 @@ def ask():
             }
         )
 
+    sensor_paste_row = None
+    try:
+        from metropt3 import parse_metropt_sensor_paste
+
+        sensor_paste_row = parse_metropt_sensor_paste(raw)
+    except ImportError:
+        pass
+
     fm = re.fullmatch(r"\d{5,8}", raw.strip())
     sm = re.search(r"\b(\d{5,8})\b", raw)
     pid = (fm.group(0) if fm else (sm.group(1) if sm else None))
@@ -851,14 +865,37 @@ def ask():
             }
         )
 
-    if wants_metropt3_question(q):
+    if wants_metropt3_question(q) or sensor_paste_row is not None:
         try:
-            from metropt3 import metropt3_for_ask
+            from metropt3 import (
+                metropt3_chat_context,
+                metropt3_fallback_answer_text,
+                metropt3_for_ask,
+                metropt3_paste_intro_text,
+                predict_from_row,
+            )
+
+            if sensor_paste_row is not None:
+                pred = predict_from_row(sensor_paste_row)
+                ctx = metropt3_chat_context()
+                ctx["pasted_readings"] = sensor_paste_row
+                ctx["pasted_prediction"] = pred
+                fb = (
+                    metropt3_paste_intro_text(sensor_paste_row, pred)
+                    + "\n\n"
+                    + metropt3_fallback_answer_text(ctx)
+                )
+                label = (
+                    "metropt3_predictive_maintenance: The user pasted MetroPT-style sensor readings. "
+                    "Interpret pasted_prediction (failure %, class_label, contributions) and relate to svm_model. "
+                    "Synthetic demo—not live DSNY telemetry. Short answer."
+                )
+                return jsonify({"answer": gemini_answer(raw, label, ctx, fb)})
 
             ctx, fb = metropt3_for_ask()
             label = (
                 "metropt3_predictive_maintenance: synthetic air-unit demo (not live DSNY fleet telemetry). "
-                "Summarize MANOVA (Wilks lambda, p) and SVM metrics (ROC-AUC, CV, F1, confusion matrix) "
+                "Summarize RBF SVM metrics (ROC-AUC, CV, F1, confusion matrix, top feature weights) "
                 "and both scenario_predictions (failure probability for healthy-style vs stressed-style sensors). "
                 "State clearly this is demo / synthetic training data."
             )
@@ -868,7 +905,7 @@ def ask():
                 {
                     "answer": (
                         "Truck health / predictive maintenance needs the MetroPT-3 stack installed "
-                        f"(numpy, pandas, scikit-learn, scipy, statsmodels). {e}"
+                        f"(numpy, pandas, scikit-learn). {e}"
                     ),
                 }
             )
@@ -929,12 +966,16 @@ def ask():
 
     return jsonify(
         {
-            "answer": 'Try: "Bronx garbage trend" or "pickup schedule" or "Queens garbage day" or open /routing for route data.',
+            "answer": (
+                'Try: "Bronx garbage trend" or "pickup schedule" or "Queens garbage day". '
+                "For route stops: open /routing. "
+                "For equipment-style sensor predictions (oil temp, motor current, TP2/TP3…): paste readings in the box or open /metropt3."
+            ),
         }
     )
 
 
-# --- MetroPT-3 predictive maintenance (MANOVA + SVM API + static dashboard) ---
+# --- MetroPT-3 predictive maintenance (SVM API + static dashboard) ---
 @app.route("/metropt3")
 def metropt3_page():
     return send_from_directory(FRONTEND_DIR, "metropt3.html")

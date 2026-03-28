@@ -73,6 +73,15 @@
   <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> — <code>use_google_traffic</code>, <code>traffic_model</code>, <code>truck_aware</code>, <code>use_osrm</code>.</p>
 
   <script>
+    function _el(id) { return document.getElementById(id); }
+    function _chk(id, fallback) {
+      const n = _el(id);
+      return n && 'checked' in n ? n.checked : fallback;
+    }
+    function _val(id, fallback) {
+      const n = _el(id);
+      return n && n.value !== undefined ? n.value : fallback;
+    }
     document.getElementById('btnOpt').addEventListener('click', async () => {
       const out = document.getElementById('out');
       const mapLink = document.getElementById('mapLink');
@@ -96,13 +105,13 @@
           body: JSON.stringify({
             stops,
             start_index: 0,
-            use_osrm: document.getElementById('useOsrm').checked,
-            use_google_traffic: document.getElementById('useGoogleTraffic').checked,
-            traffic_model: document.getElementById('trafficModel').value,
-            truck_aware: document.getElementById('truckAware').checked,
-            avoid_tolls: document.getElementById('avoidTolls').checked,
-            avoid_highways: document.getElementById('avoidHighways').checked,
-            avoid_ferries: document.getElementById('avoidFerries').checked,
+            use_osrm: _chk('useOsrm', true),
+            use_google_traffic: _chk('useGoogleTraffic', false),
+            traffic_model: _val('trafficModel', 'best_guess'),
+            truck_aware: _chk('truckAware', false),
+            avoid_tolls: _chk('avoidTolls', false),
+            avoid_highways: _chk('avoidHighways', false),
+            avoid_ferries: _chk('avoidFerries', false),
           }),
         });
         const data = await res.json();
