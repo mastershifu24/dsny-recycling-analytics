@@ -1,21 +1,19 @@
-# DSNY Tonnage Voice
+# DSNY Recycling Detection
 
-Voice or text → Flask → **NYC Open Data SODA** — default **[DSNY Monthly Tonnage `ebb7-mvp5`](https://data.cityofnewyork.us/d/ebb7-mvp5)** ([data preview](https://data.cityofnewyork.us/City-Government/DSNY-Monthly-Tonnage-Data/ebb7-mvp5/data_preview)).
+Voice or text → Flask → **[NYC Open Data SODA](https://data.cityofnewyork.us/)** — default **[DSNY Monthly Tonnage `ebb7-mvp5`](https://data.cityofnewyork.us/d/ebb7-mvp5)** ([preview](https://data.cityofnewyork.us/City-Government/DSNY-Monthly-Tonnage-Data/ebb7-mvp5/data_preview)).
 
-Rename the project folder in Explorer to **`dsny-tonnage-voice`** (or any name you like); code does not depend on the folder name.
+**Repo:** [github.com/mastershifu24/dsny-recycling-detection](https://github.com/mastershifu24/dsny-recycling-detection) — clone folder name can be `dsny-recycling-detection`; code does not depend on the path.
 
-The backend **sums `refusetonscollected` by `MONTH`**, then applies a **1‑month shift** (each month vs the previous month in the series) for **month‑over‑month** change — same idea as `pandas.Series.shift(1)` in your notebook.
+The backend **sums `refusetonscollected` by `MONTH`**, then **month-over-month change** vs the previous month (same idea as `pandas.Series.shift(1)`). Optional **Gemini** via `GEMINI_API_KEY`.
 
-Optional **Gemini** when `GEMINI_API_KEY` is set.
-
-## Switch dataset
+## Datasets
 
 | Dataset | Env var |
 |--------|---------|
 | DSNY Monthly Tonnage (default) | `NYC_SODA_DATASET=ebb7-mvp5` |
 | SweepNYC street cleaning | `NYC_SODA_DATASET=c23c-uwsm` |
 
-Optional: `SOCRATA_APP_TOKEN` (Socrata app token) for rate limits. Optional: `NYC_SODA_LIMIT` (default `8000`, max `50000`).
+Optional: `SOCRATA_APP_TOKEN`, `NYC_SODA_LIMIT` (default `8000`, max `50000`).
 
 ## Run locally
 
@@ -36,58 +34,37 @@ $env:GEMINI_API_KEY = "your-key"
 python main.py
 ```
 
-## ML that actually fits this problem
+## ML ideas
 
-Monthly refuse tons are a **short univariate time series** (plus borough splits). Reasonable options:
+Monthly tons = short time series. Reasonable next steps: ARIMA/SARIMA (`statsmodels`), Prophet, or BigQuery ML / Vertex Forecast if you load full history. Keep baselines and **ground** answers in real pulled data.
 
-| Approach | When it makes sense |
-|----------|---------------------|
-| **Naive / moving average / linear trend** | Baseline; what the app already does. Judges like clear baselines. |
-| **ARIMA / SARIMA** (`statsmodels`) | Classic monthly data, interpretable; needs enough months and tuning. |
-| **Prophet** | Strong seasonality + holidays; easy API; extra dependency. |
-| **Gradient boosting** (LightGBM) on **lags + borough** | If you engineer features from history; more data prep. |
-| **BigQuery ML ARIMA+** or **Vertex AI Forecast** | If you load history into GCP — good “Cloud native” story, more setup. |
-
-**Practical hackathon advice:** keep **grounded outputs** (from real pulled rows). If you add ML, show **baseline vs model** and say the model is **experimental**. Deep LSTM on tiny monthly series is usually **not** worth it.
-
-## Explore with pandas + sodapy (notebook-style)
+## Explore (pandas + sodapy)
 
 ```bash
 pip install pandas sodapy
 python scripts/dsny_tonnage_explore.py
 ```
 
-Matches the pattern: `client.get("ebb7-mvp5", limit=5000)` then `groupby` + **`shift(1)`**.
-
 ## API
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/ask` | `{ "question": "string" }` → `{ "answer": "string" }` (mention **shift**, **trend**, **borough**, **tonnage**) |
-| GET | `/analytics/summary` | JSON with `monthly_with_shift`, forecasts. Optional `?borough=bronx` |
+| POST | `/ask` | `{ "question": "string" }` → `{ "answer": "string" }` |
+| GET | `/analytics/summary` | JSON analytics. Optional `?borough=bronx` |
 
-## Browser: 100 rows
+## Sample API URL (100 rows)
 
 [https://data.cityofnewyork.us/resource/ebb7-mvp5.json?%24limit=100](https://data.cityofnewyork.us/resource/ebb7-mvp5.json?%24limit=100)
 
-## Host on Google Cloud (recommended: **Cloud Run**)
-
-For a **Flask + Dockerfile** app, **Cloud Run** is the usual choice: serverless containers, HTTPS URL, scales to zero.
-
-1. Repo root = folder that contains **`Dockerfile`**.
-2. One deploy builds the image and ships it (omit `--set-secrets` until the secret exists):
+## Cloud Run
 
 ```bash
-gcloud run deploy dsny-tonnage-voice --source . --region us-central1 --allow-unauthenticated \
+gcloud run deploy dsny-recycling-detection --source . --region us-central1 --allow-unauthenticated \
   --set-env-vars=NYC_SODA_DATASET=ebb7-mvp5
 ```
 
-Optional Gemini: create secret `gemini-api-key`, grant the Cloud Run service account **Secret Accessor**, then add  
-`--set-secrets=GEMINI_API_KEY=gemini-api-key:latest`.
-
-**Alternatives:** Cloud Functions (2nd gen) can run containers but Run is simpler for this stack. **App Engine** works but is heavier. **GKE** only if you need Kubernetes.
+Optional: `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` after creating the secret and granting access.
 
 ## Later
 
-- Full history: paginate SODA (`$limit` + `$offset`) or load CSV export into BigQuery.
-- Borough + community district charts; Vertex / Gemini with tools.
+- Paginate SODA or load CSV into BigQuery; charts by borough / district.

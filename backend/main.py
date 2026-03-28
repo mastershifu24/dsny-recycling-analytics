@@ -1,7 +1,7 @@
 """
-DSNY Tonnage Voice — Flask backend.
-Default: DSNY Monthly Tonnage (ebb7-mvp5). Override: NYC_SODA_DATASET=c23c-uwsm (SweepNYC).
-Env: SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT (default 8000).
+DSNY Recycling Detection — Flask backend.
+Voice/text UI over NYC Open Data: default DSNY Monthly Tonnage (ebb7-mvp5).
+Override: NYC_SODA_DATASET=c23c-uwsm (SweepNYC). Env: SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """
 
 from __future__ import annotations
@@ -305,7 +305,9 @@ def ask():
     note = next((f"borough has '{n}'" for n in BOROUGH_NAMES if n in q), "")
 
     if not q:
-        return jsonify({"answer": "Ask about DSNY tonnage, trends, shift, or a borough name."})
+        return jsonify(
+            {"answer": "Ask about DSNY recycling/tonnage, trends, month-over-month shift, or a borough."}
+        )
 
     fm = re.fullmatch(r"\d{5,8}", raw.strip())
     sm = re.search(r"\b(\d{5,8})\b", raw)
@@ -390,7 +392,7 @@ def ask():
 
     return jsonify(
         {
-            "answer": 'Try: "tonnage trend and shift" or "Bronx refuse month over month".',
+            "answer": 'Try: "recycling tonnage trend and shift" or "Bronx refuse month over month".',
         }
     )
 

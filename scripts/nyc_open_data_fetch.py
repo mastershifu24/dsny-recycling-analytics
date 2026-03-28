@@ -4,9 +4,8 @@ Fetch rows from NYC Open Data via the Socrata SODA API (JSON).
 No third-party deps — uses stdlib only.
 
 Examples:
-  python scripts/nyc_open_data_fetch.py c23c-uwsm -n 3
+  python scripts/nyc_open_data_fetch.py ebb7-mvp5 -n 100
   python scripts/nyc_open_data_fetch.py c23c-uwsm -n 5 -w "physical_id = '100027'"
-  python scripts/nyc_open_data_fetch.py jjvm-ciff -n 2 -s borough,permit_type,street_name
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ def main() -> int:
     )
     p.add_argument(
         "dataset_id",
-        help="4x4 resource id (e.g. c23c-uwsm for SweepNYC Street Cleaning)",
+        help="4x4 id (e.g. ebb7-mvp5 DSNY tonnage, c23c-uwsm SweepNYC)",
     )
     p.add_argument("-n", "--limit", type=int, default=5, help="Max rows (default 5)")
     p.add_argument("-w", "--where", help="SoQL $where, e.g. borough = 'MANHATTAN'")
