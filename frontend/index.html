@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSNY Tonnage Voice</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    button { font-size: 1rem; padding: 0.6rem 1rem; cursor: pointer; margin-right: 0.5rem; }
+    .hint { color: #555; font-size: 0.9rem; }
+    #result { margin-top: 1rem; white-space: pre-wrap; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    textarea { width: 100%; max-width: 100%; min-height: 4rem; font: inherit; padding: 0.5rem; box-sizing: border-box; }
+    .row { margin-top: 0.75rem; }
+    a.source { font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>DSNY Tonnage Voice</h1>
+  <p class="hint">
+    Uses <strong>DSNY Monthly Tonnage</strong> open data: refuse / recycling tons by month, borough, and community district.
+    Ask for <strong>trends</strong>, <strong>shift</strong> / <strong>month over month</strong>, or name a <strong>borough</strong> (e.g. Bronx).
+    Set <code>NYC_SODA_DATASET=c23c-uwsm</code> on the server to use SweepNYC instead.
+  </p>
+  <p>
+    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Dataset: DSNY Monthly Tonnage (ebb7-mvp5)</a>
+  </p>
+
+  <div class="row">
+    <button type="button" id="startBtn">Ask with microphone</button>
+  </div>
+
+  <label for="textQ">Or type a question</label>
+  <textarea id="textQ" placeholder="e.g. Show tonnage trend and shift. Bronx refuse month over month. What’s the DSNY data say?"></textarea>
+  <div class="row">
+    <button type="button" id="sendBtn">Send</button>
+  </div>
+
+  <p id="transcript"></p>
+  <p id="result"></p>
+  <script src="/script.js"></script>
+</body>
+</html>
