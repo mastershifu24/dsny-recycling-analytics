@@ -2,11 +2,11 @@
 
 # Ahmed Shifa, Rami Khan, Falisha Khan
 
-**Flask** app: **voice or text** → **[NYC Open Data (SODA)](https://data.cityofnewyork.us/)**. Built for **sanitation crews and truck drivers** who need **fast context** from published city data—borough refuse trends, schedule pointers—not a replacement for full enforcement paperwork when contamination needs official reporting.
+**Flask** app: **voice or text** → **[NYC Open Data (SODA)](https://data.cityofnewyork.us/)**. Built for **sanitation crews and truck drivers** who need **fast context** from published city data—borough **garbage** trends, schedule pointers, and **route optimization** building blocks (`/routing`)—not a replacement for full enforcement paperwork when contamination needs official reporting.
 
 ### Problem we care about
 
-**Wrong trash in recycling** ruins loads and **time on route is short** for long forms. This app is a **hands-free first step**: borough-level **refuse / trend** context from open data, plus **honest links** for pickup-day questions (official DSNY lookup by address).
+**Wrong trash in recycling** ruins loads and **time on route is short** for long forms. This app is a **hands-free first step**: borough-level **garbage / trend** context from open data, **ranked & optimized route** direction via DOT + CSCL links, plus pickup-day pointers (official DSNY lookup by address).
 
 ### Stack
 
@@ -18,6 +18,7 @@
 | **Pillow** | Image decode for `/analyze-image` |
 | **Cloud Run** | Container deploy from repo root (`Dockerfile`) |
 | **MetroPT-3** (optional) | **`/metropt3`** — synthetic train-air-unit demo: MANOVA + RBF SVM via **`GET /api/metropt3/diagnostics`**, **`POST /api/metropt3/predict`**, **`POST /api/metropt3/interpret`** (Gemini uses same `GEMINI_API_KEY` as the DSNY app). Requires `numpy`, `pandas`, `scikit-learn`, `scipy`, `statsmodels`. |
+| **Routing** | **`/routing`** — links to DOT truck network, CSCL, DSNY schedule; **`POST /api/route/optimize`** — basic stop order (nearest-neighbor on **OSRM** driving times, Haversine fallback). |
 
 **Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone folder name can differ; code paths are relative.
 
@@ -41,7 +42,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Open **http://127.0.0.1:5000/**. Optional demo: **http://127.0.0.1:5000/metropt3**.
+Open **http://127.0.0.1:5000/**. Optional: **http://127.0.0.1:5000/metropt3**, **http://127.0.0.1:5000/routing** (external dataset links).
 
 ### Optional: Gemini (local)
 

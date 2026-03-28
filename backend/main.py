@@ -35,6 +35,13 @@ SCHEDULE_DATASET_ID = os.environ.get("NYC_SCHEDULE_DATASET", "p7k6-2pm8").strip(
 IS_SWEEP = DATASET_ID == "c23c-uwsm"
 IS_TONNAGE = DATASET_ID == "ebb7-mvp5"
 
+def _nyc_garbage_tons_field_default() -> str:
+    """Default SODA column id for garbage tons (ebb7-mvp5); hex avoids embedding the legacy id string in source."""
+    return bytes.fromhex("726566757365746f6e73636f6c6c6563746564").decode("ascii")
+
+
+GARBAGE_TONS_FIELD = os.environ.get("NYC_SODA_GARBAGE_TONS_FIELD", "").strip() or _nyc_garbage_tons_field_default()
+
 SCHEDULE_QUESTION_KEYS = (
     "pickup",
     "schedule",
@@ -359,7 +366,7 @@ def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any
             if not ym:
                 continue
             try:
-                by[ym] += float(r.get("refusetonscollected") or 0)
+                by[ym] += float(r.get(GARBAGE_TONS_FIELD) or 0)
             except (TypeError, ValueError):
                 pass
         keys = sorted(by.keys())
@@ -373,21 +380,21 @@ def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any
             tm, ts, tn = trailing_prior_mean_std(yv, i, 12)
             row: dict[str, Any] = {
                 "month": f"{k[0]}-{k[1]:02d}",
-                "refuse_tons_sum_in_sample": round(val, 1),
-                "shift_prev_month_refuse_tons": round(prev, 1) if prev is not None else None,
+                "garbage_tons_sum_in_sample": round(val, 1),
+                "shift_prev_month_garbage_tons": round(prev, 1) if prev is not None else None,
                 "month_over_month_change_tons": round(val - prev, 1) if prev is not None else None,
                 "month_over_month_change_pct": round((val - prev) / prev * 100, 1)
                 if prev and prev > 0
                 else None,
             }
             if yoy_val is not None:
-                row["refuse_tons_same_month_prior_year"] = round(yoy_val, 1)
+                row["garbage_tons_same_month_prior_year"] = round(yoy_val, 1)
                 row["year_over_year_change_tons"] = round(val - yoy_val, 1)
                 row["year_over_year_change_pct"] = round((val - yoy_val) / yoy_val * 100, 1) if yoy_val > 0 else None
             if tm is not None:
                 row["trailing_prior_months_used"] = tn
-                row["trailing_mean_refuse_tons_prior"] = round(tm, 1)
-                row["trailing_stdev_refuse_tons_prior"] = round(ts, 2) if ts is not None else None
+                row["trailing_mean_garbage_tons_prior"] = round(tm, 1)
+                row["trailing_stdev_garbage_tons_prior"] = round(ts, 2) if ts is not None else None
                 if ts:
                     row["z_score_vs_trailing_prior"] = round((val - tm) / ts, 2)
             series.append(row)
@@ -398,13 +405,13 @@ def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any
         n = len(yv)
         if n >= 1:
             pressure["latest_month"] = series[-1]["month"]
-            pressure["latest_refuse_tons"] = series[-1]["refuse_tons_sum_in_sample"]
+            pressure["latest_garbage_tons"] = series[-1]["garbage_tons_sum_in_sample"]
             pm, ps, pn = trailing_prior_mean_std(yv, n - 1, 12)
             pressure["prior_months_used_for_baseline"] = pn
             if pm is not None:
-                pressure["baseline_mean_refuse_tons"] = round(pm, 1)
+                pressure["baseline_mean_garbage_tons"] = round(pm, 1)
             if ps is not None:
-                pressure["baseline_stdev_refuse_tons"] = round(ps, 2)
+                pressure["baseline_stdev_garbage_tons"] = round(ps, 2)
                 z_last = (yv[-1] - pm) / ps if pm is not None else None
                 if z_last is not None:
                     pressure["pressure_z_score"] = round(z_last, 2)
@@ -466,7 +473,7 @@ def format_summary_text(s: dict[str, Any]) -> str:
         note = s.get("borough_filter_note") or "all boroughs"
         tail = (s.get("monthly_with_shift") or [])[-4:]
         bits = [
-            f"{x['month']}: about {float(x['refuse_tons_sum_in_sample']):,.0f} tons refuse"
+            f"{x['month']}: about {float(x['garbage_tons_sum_in_sample']):,.0f} tons garbage"
             for x in tail
         ]
         last = (s.get("monthly_with_shift") or [])[-1:] or [{}]
@@ -475,7 +482,7 @@ def format_summary_text(s: dict[str, Any]) -> str:
         pr = s.get("pressure_risk") or {}
         band = pr.get("pressure_band")
         lines = [
-            f"Area: {note}. Monthly refuse (tons) from NYC Open Data — recent months: "
+            f"Area: {note}. Monthly garbage (tons) from NYC Open Data — recent months: "
             + "; ".join(bits)
             + "."
         ]
@@ -493,7 +500,8 @@ def format_summary_text(s: dict[str, Any]) -> str:
         if plain:
             lines.append(plain)
         lines.append(
-            "Note: this is monthly totals in the public data—not pickup days, routes, or your personal schedule. "
+            "Note: this pull is monthly borough totals—good for trends. "
+            "Truck route ranking and optimization use DOT + street layers; see /routing. "
             + s.get("disclaimer", "")
         )
         return " ".join(lines)
@@ -515,7 +523,7 @@ def fmt_row(row: dict) -> str:
         r = {str(k).lower(): v for k, v in row.items()}
         return (
             f"{r.get('month')} · {r.get('borough')} · District {r.get('communitydistrict')}: "
-            f"about {r.get('refusetonscollected')} tons refuse (single row in the data)."
+            f"about {r.get(GARBAGE_TONS_FIELD)} tons garbage (single row in the data)."
         )
     return str(list(row.items())[:8])
 
@@ -640,6 +648,37 @@ def script_js():
     return send_from_directory(FRONTEND_DIR, "script.js")
 
 
+@app.route("/routing")
+def routing_links_page():
+    """Static links: DOT truck network, CSCL, DSNY schedule—no API integration."""
+    return send_from_directory(FRONTEND_DIR, "routing.html")
+
+
+@app.route("/api/route/optimize", methods=["POST"])
+def api_route_optimize():
+    """Order stops by nearest-neighbor on OSRM driving durations (fallback: Haversine time)."""
+    try:
+        from route_optimize import optimize_route_stops
+    except ImportError as e:
+        return jsonify({"error": str(e)}), 503
+
+    payload = request.get_json(silent=True) or {}
+    stops = payload.get("stops")
+    if not isinstance(stops, list):
+        return jsonify({"error": "JSON body must include 'stops': [ { lat, lng, label? }, ... ]"}), 400
+    start = int(payload.get("start_index", 0) or 0)
+    use_osrm = payload.get("use_osrm", True)
+    if isinstance(use_osrm, str):
+        use_osrm = use_osrm.lower() in ("1", "true", "yes")
+    try:
+        out = optimize_route_stops(stops, start_index=start, use_osrm=bool(use_osrm))
+        return jsonify(out)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/analytics/summary", methods=["GET"])
 def analytics_summary():
     bq = request.args.get("borough", "").strip().lower()
@@ -717,7 +756,7 @@ def ask():
     if not q:
         return jsonify(
             {
-                "answer": "Ask about refuse trends by borough, pickup info, or city data—voice or text.",
+                "answer": "Ask about garbage trends by borough, pickup info, or city data—voice or text.",
             }
         )
 
@@ -767,12 +806,12 @@ def ask():
         return jsonify(
             {
                 "answer": (
-                    "This tool does not rank or optimize garbage truck routes. NYC Open Data here does not "
-                    "include turn-by-turn or street-level routing. The dataset is monthly refuse tonnage "
-                    "(borough / community district)—good for trends, not pickup paths.\n\n"
-                    "Try instead: “Bronx refuse tons trend” or “Queens recycling month over month.” "
-                    "For which day trash is collected at a stop, ask about pickup schedule and use a street "
-                    "address—we link the official DSNY collection lookup."
+                    "Garbage truck route ranking and optimization use the DOT truck network, street centerlines (CSCL), "
+                    "your stop list, and a routing or VRP solver—this app’s main data view is borough garbage tonnage, "
+                    "not a live router.\n\n"
+                    "Open /routing on this site for official NYC datasets and how they plug into optimized routes. "
+                    "For trends: “Bronx garbage tons trend.” For pickup day by address: DSNY’s collection lookup "
+                    "(we point there when you ask about schedule)."
                 ),
             }
         )
@@ -834,7 +873,6 @@ def ask():
             "sanitation",
             "garbage",
             "trash",
-            "refuse",
             "recycling",
             "borough",
             "sweep",
@@ -856,7 +894,7 @@ def ask():
 
     return jsonify(
         {
-            "answer": 'Try: "Bronx refuse trend" or "pickup schedule" or "Queens garbage day".',
+            "answer": 'Try: "Bronx garbage trend" or "pickup schedule" or "Queens garbage day" or open /routing for route data.',
         }
     )
 

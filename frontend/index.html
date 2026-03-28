@@ -85,6 +85,7 @@
       line-height: 1.5;
     }
     .callout strong { color: #7c2d12; }
+    .callout a { color: var(--accent); font-weight: 600; }
     .links {
       font-size: 0.92rem;
       margin: 0;
@@ -207,24 +208,26 @@
     <section class="card" aria-labelledby="about-h">
       <h2 id="about-h">What this is</h2>
       <p class="lead">
-        Quick <strong>borough-level refuse / recycling trends</strong> from published city numbers—no long forms.
+        Quick <strong>borough-level garbage &amp; recycling trends</strong> from published city numbers—no long forms.
         For <strong>pickup day</strong>, we point you to the <strong>official address lookup</strong> (you need a real street address).
       </p>
       <div class="callout" role="note">
-        <strong>Not included:</strong> truck routes, turn-by-turn directions, or “best route” rankings. That isn’t in this dataset.
+        <strong>Not included:</strong> truck routes, turn-by-turn, or “best route” rankings in the tonnage data.
+        <a href="/routing">Where to find DOT truck maps &amp; related links</a>
       </div>
     </section>
 
     <section class="card">
       <h2>Try asking</h2>
       <ul class="examples">
-        <li>“Bronx refuse trend month over month”</li>
+        <li>“Bronx garbage trend month over month”</li>
         <li>“Queens recycling tons last year”</li>
         <li>“Truck health statistics” or “predictive maintenance model” (MetroPT-3 demo: SVM + MANOVA + sample failure risk)</li>
         <li>“When is garbage pickup” (then use an <strong>address</strong> for your stop)</li>
       </ul>
       <p class="links" style="margin-top:0.75rem">
         <a href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">NYC tonnage data (open data)</a>
+        · <a href="/routing#demo">Truck routes + stop optimizer</a>
         · <a href="/metropt3">MetroPT-3 demo</a>
       </p>
     </section>
@@ -251,7 +254,7 @@
     <section class="card" aria-labelledby="text-h">
       <h2 id="text-h">Type a question</h2>
       <label for="textQ">Your question</label>
-      <textarea id="textQ" placeholder="Example: Bronx refuse tons trend."></textarea>
+      <textarea id="textQ" placeholder="Example: Bronx garbage tons trend."></textarea>
       <p class="hint">Tip: <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> to send</p>
       <button type="button" id="sendBtn">Get answer</button>
     </section>

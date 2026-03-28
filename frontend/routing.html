@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Garbage truck routes & optimization</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 38rem; margin: 0 auto; padding: 1.25rem; line-height: 1.55; color: #0f172a; background: #f8fafc; font-size: 1rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+    p, li { margin: 0.5rem 0; }
+    a { color: #0d9488; font-weight: 600; }
+    .box { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+    .muted { color: #64748b; font-size: 0.92rem; }
+    ul { padding-left: 1.2rem; }
+    label { display: block; font-weight: 600; margin-top: 0.5rem; font-size: 0.9rem; }
+    input, textarea, button { font: inherit; }
+    textarea { width: 100%; min-height: 7rem; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; }
+    button { margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; border: none; background: #0d9488; color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #fff; color: #0d9488; border: 1px solid #0d9488; }
+    #out { font-size: 0.92rem; white-space: pre-wrap; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; margin-top: 0.75rem; }
+    code { font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <p><a href="/">← Back to app</a></p>
+  <h1>Rank & optimize garbage truck routes</h1>
+  <p><strong>Goal:</strong> ordered stops using <strong>road driving times</strong> (OSRM) when possible, plus datasets for constraints. Borough <strong>tonnage</strong> in the main app is separate.</p>
+
+  <div class="box" id="demo">
+    <strong>Basic stop optimizer (built-in)</strong>
+    <p class="muted">Paste JSON: an array of stops with <code>lat</code>, <code>lng</code>, optional <code>label</code>. First stop is the default start. Uses nearest-neighbor on OSRM driving durations (falls back to straight-line time if OSRM is down).</p>
+    <label for="jsonIn">Stops JSON</label>
+    <textarea id="jsonIn" spellcheck="false">[
+  {"lat": 40.7589, "lng": -73.9851, "label": "Times Sq"},
+  {"lat": 40.7484, "lng": -73.9857, "label": "MSG"},
+  {"lat": 40.7614, "lng": -73.9776, "label": "Rock Center"}
+]</textarea>
+    <p class="muted"><label><input type="checkbox" id="useOsrm" checked /> Use OSRM road network (uncheck = Haversine-only)</label></p>
+    <button type="button" id="btnOpt">Optimize order</button>
+    <div id="out" aria-live="polite"></div>
+    <p id="mapLink" class="muted"></p>
+  </div>
+
+  <div class="box">
+    <strong>DOT — truck route network (constraints for driving)</strong>
+    <ul>
+      <li><a href="https://data.cityofnewyork.us/Transportation/New-York-City-Truck-Routes-Map/wnu3-egq7" target="_blank" rel="noopener">New York City Truck Routes (Map)</a> — NYC Open Data</li>
+    </ul>
+    <p class="muted">Use this layer so optimized paths respect where commercial trucks may or must run.</p>
+  </div>
+
+  <div class="box">
+    <strong>Street graph (for routing engines)</strong>
+    <ul>
+      <li><a href="https://data.cityofnewyork.us/City-Government/NYC-Street-Centerline-CSCL-/exjm-f27b" target="_blank" rel="noopener">NYC Street Centerline (CSCL)</a></li>
+    </ul>
+    <p class="muted">OSRM above uses OpenStreetMap; full VRP can add time windows and capacity later.</p>
+  </div>
+
+  <div class="box">
+    <strong>Pickup day (per address)</strong>
+    <ul>
+      <li><a href="https://www.nyc.gov/site/dsny/collection/residents.page" target="_blank" rel="noopener">DSNY collection schedule lookup</a></li>
+    </ul>
+  </div>
+
+  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> with body <code>{"stops":[...], "start_index":0, "use_osrm":true}</code></p>
+
+  <script>
+    document.getElementById('btnOpt').addEventListener('click', async () => {
+      const out = document.getElementById('out');
+      const mapLink = document.getElementById('mapLink');
+      out.textContent = 'Running…';
+      mapLink.innerHTML = '';
+      let stops;
+      try {
+        stops = JSON.parse(document.getElementById('jsonIn').value);
+      } catch (e) {
+        out.textContent = 'Invalid JSON: ' + e.message;
+        return;
+      }
+      if (!Array.isArray(stops)) {
+        out.textContent = 'JSON must be an array of stops.';
+        return;
+      }
+      try {
+        const res = await fetch('/api/route/optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stops,
+            start_index: 0,
+            use_osrm: document.getElementById('useOsrm').checked,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          out.textContent = data.error || res.statusText;
+          return;
+        }
+        const lines = [
+          'Matrix: ' + data.matrix_kind,
+          'Order: ' + data.order_indices.join(' → '),
+          'Edge sum (sec): ' + data.total_edge_duration_sec,
+          data.route_duration_sec != null ? 'Route total (sec): ' + data.route_duration_sec : '',
+          data.route_distance_m != null ? 'Route distance (m): ' + data.route_distance_m : '',
+          '',
+          'Ordered stops:',
+          ...data.ordered_stops.map((s, i) => (i + 1) + '. ' + s.label + ' — ' + s.lat + ', ' + s.lng),
+          '',
+          data.disclaimer,
+        ].filter(Boolean);
+        out.textContent = lines.join('\n');
+        const a = document.createElement('a');
+        a.href = data.google_maps_url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Open ordered route in Google Maps';
+        mapLink.appendChild(a);
+      } catch (e) {
+        out.textContent = 'Request failed: ' + e.message;
+      }
+    });
+  </script>
+</body>
+</html>
