@@ -3,72 +3,197 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
 <title>MetroPT-3 AI Diagnostic Suite</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0c0e14;--bg2:#13151e;--bg3:#1a1d28;--bdr:rgba(255,255,255,0.06);--bdr2:rgba(255,255,255,0.11);--txt:#e2e4ee;--mut:#6b7080;--teal:#00d4aa;--red:#ff4f5e;--amb:#f0a830;--blu:#4da6ff;--pur:#a78bfa}
+/*
+  Light dashboard: previous version was nearly monochrome dark gray
+  (teal/red sat on #0c0e14, so reads as “no color”). Here: paper bg,
+  white cards, saturated accents, Chart.js ticks use --chart-tick.
+*/
+:root{
+  --bg:#eef2f7;
+  --bg2:#ffffff;
+  --bg3:#f8fafc;
+  --bdr:#cbd5e1;
+  --bdr2:#e2e8f0;
+  --txt:#0f172a;
+  --mut:#64748b;
+  --teal:#0d9488;
+  --teal-bg:#ccfbf1;
+  --red:#e11d48;
+  --red-bg:#ffe4e6;
+  --amb:#d97706;
+  --amb-bg:#fef3c7;
+  --blu:#2563eb;
+  --blu-bg:#dbeafe;
+  --pur:#7c3aed;
+  --chart-tick:#475569;
+  --chart-grid:#e2e8f0;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--txt);font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.6;min-height:100vh}
-.hdr{padding:18px 28px 0;border-bottom:1px solid var(--bdr)}
-.hdr-top{display:flex;align-items:baseline;gap:10px;margin-bottom:2px;flex-wrap:wrap}
-.hdr h1{font-size:17px;font-weight:500;letter-spacing:-.2px}
-.hdr-sub{font-size:11.5px;color:var(--mut);margin-bottom:14px}
-.tabs{display:flex;gap:0;overflow-x:auto}
-.tab{padding:9px 18px;font-size:12.5px;color:var(--mut);cursor:pointer;border:none;border-bottom:2px solid transparent;background:none;font-family:'DM Sans',sans-serif;white-space:nowrap;transition:color .15s,border-color .15s}
-.tab:hover{color:var(--txt)}
-.tab.on{color:var(--teal);border-bottom-color:var(--teal)}
-.pane{padding:20px 28px;display:none}
+body{
+  background:linear-gradient(165deg,#e0e7ff 0%,var(--bg) 38%,#f0fdfa 100%);
+  color:var(--txt);
+  font-family:'DM Sans',system-ui,sans-serif;
+  font-size:14px;
+  line-height:1.55;
+  min-height:100vh;
+}
+.hdr{
+  padding:20px 28px 0;
+  border-bottom:1px solid var(--bdr);
+  background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.65));
+  backdrop-filter:blur(8px);
+}
+.hdr-top{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;flex-wrap:wrap}
+.hdr h1{font-size:1.25rem;font-weight:600;letter-spacing:-.03em;color:var(--txt)}
+.hdr-sub{font-size:12px;color:var(--mut);margin-bottom:14px}
+.hdr-sub code{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--bg3);padding:2px 6px;border-radius:4px;border:1px solid var(--bdr2)}
+.tabs{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}
+.tab{
+  padding:10px 16px;
+  font-size:13px;
+  font-weight:500;
+  color:var(--mut);
+  cursor:pointer;
+  border:none;
+  border-radius:8px 8px 0 0;
+  background:transparent;
+  font-family:inherit;
+  white-space:nowrap;
+  transition:background .15s,color .15s;
+}
+.tab:hover{color:var(--txt);background:rgba(13,148,136,.08)}
+.tab.on{color:var(--teal);background:var(--bg2);box-shadow:0 -1px 0 var(--teal) inset}
+.pane{padding:22px 28px 32px;display:none}
 .pane.on{display:block}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
-.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
-.card{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:15px 17px}
-.ctitle{font-size:10.5px;font-weight:500;color:var(--mut);text-transform:uppercase;letter-spacing:.8px;margin-bottom:11px}
-.met{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:13px 15px}
-.met-l{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px}
-.met-v{font-size:22px;font-weight:500;font-family:'JetBrains Mono',monospace}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.card{
+  background:var(--bg2);
+  border:1px solid var(--bdr2);
+  border-radius:12px;
+  padding:16px 18px;
+  box-shadow:0 1px 3px rgba(15,23,42,.06);
+}
+.ctitle{
+  font-size:11px;
+  font-weight:600;
+  color:var(--mut);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  margin-bottom:12px;
+}
+.met{
+  background:var(--bg2);
+  border:1px solid var(--bdr2);
+  border-radius:12px;
+  padding:14px 16px;
+  box-shadow:0 1px 2px rgba(15,23,42,.05);
+}
+.met:nth-child(1){border-left:4px solid var(--blu)}
+.met:nth-child(2){border-left:4px solid var(--teal)}
+.met:nth-child(3){border-left:4px solid var(--red)}
+.met:nth-child(4){border-left:4px solid var(--amb)}
+.met-l{font-size:11px;color:var(--mut);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.met-v{font-size:1.5rem;font-weight:600;font-family:'JetBrains Mono',monospace}
 .tc{color:var(--teal)}.rc{color:var(--red)}.ac{color:var(--amb)}.bc{color:var(--blu)}
 .cw{position:relative;width:100%}
-.dt{width:100%;border-collapse:collapse;font-size:12.5px}
-.dt th{text-align:left;padding:7px 11px;color:var(--mut);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--bdr)}
-.dt td{padding:7px 11px;border-bottom:1px solid var(--bdr)}
+.dt{width:100%;border-collapse:collapse;font-size:13px}
+.dt th{
+  text-align:left;
+  padding:8px 10px;
+  color:var(--mut);
+  font-weight:600;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  border-bottom:2px solid var(--bdr2);
+  background:var(--bg3);
+}
+.dt td{padding:9px 10px;border-bottom:1px solid var(--bdr2)}
 .dt tr:last-child td{border-bottom:none}
-.dt tr:hover td{background:rgba(255,255,255,.015)}
+.dt tr:hover td{background:#f8fafc}
 .mono{font-family:'JetBrains Mono',monospace;font-size:12px}
-.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10.5px;font-weight:500}
-.bg{background:rgba(0,212,170,.1);color:var(--teal)}
-.br{background:rgba(255,79,94,.1);color:var(--red)}
-.ba{background:rgba(240,168,48,.1);color:var(--amb)}
-.sr{display:flex;align-items:center;gap:10px;margin-bottom:9px}
-.sr label{font-size:12px;color:var(--mut);min-width:152px;flex-shrink:0}
-.sr input[type=range]{flex:1;accent-color:var(--teal);height:4px}
-.sr .val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--txt);min-width:42px;text-align:right}
-.selr{display:flex;align-items:center;gap:10px;margin-bottom:9px}
-.selr label{font-size:12px;color:var(--mut);min-width:152px;flex-shrink:0}
-.selr select{flex:1;background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);padding:5px 8px;border-radius:6px;font-family:'DM Sans',sans-serif;font-size:12px}
-.rbig{font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:500;line-height:1;transition:color .3s}
-.rtrack{background:var(--bg3);border-radius:6px;height:5px;overflow:hidden;margin:8px 0 11px}
-.rfill{height:100%;border-radius:6px;transition:width .3s,background .3s}
-.sbox{border-radius:8px;padding:9px 13px;font-size:12.5px;line-height:1.5}
-.sok{background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.18);color:var(--teal)}
-.swarn{background:rgba(240,168,48,.07);border:1px solid rgba(240,168,48,.18);color:var(--amb)}
-.sdan{background:rgba(255,79,94,.07);border:1px solid rgba(255,79,94,.18);color:var(--red)}
-hr{border:none;border-top:1px solid var(--bdr);margin:13px 0}
-.btnp{background:var(--teal);color:#0c0e14;border:none;padding:9px 18px;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:opacity .15s}
-.btnp:hover{opacity:.85}
-.btnp:disabled{opacity:.35;cursor:not-allowed}
-.btns{background:transparent;color:var(--txt);border:1px solid var(--bdr2);padding:9px 18px;border-radius:7px;font-size:12.5px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .15s}
+.badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.bg{background:var(--teal-bg);color:#0f766e}
+.br{background:var(--red-bg);color:#be123c}
+.ba{background:var(--amb-bg);color:#b45309}
+.sr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.sr label{font-size:13px;color:var(--txt);font-weight:500;min-width:152px;flex-shrink:0}
+.sr input[type=range]{flex:1;accent-color:var(--teal);height:6px}
+.sr .val{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pur);font-weight:500;min-width:44px;text-align:right}
+.selr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.selr label{font-size:13px;color:var(--txt);font-weight:500;min-width:152px;flex-shrink:0}
+.selr select{
+  flex:1;
+  background:var(--bg2);
+  border:1px solid var(--bdr);
+  color:var(--txt);
+  padding:7px 10px;
+  border-radius:8px;
+  font-family:inherit;
+  font-size:13px;
+}
+.rbig{font-family:'JetBrains Mono',monospace;font-size:2.75rem;font-weight:700;line-height:1;transition:color .25s}
+.rtrack{background:var(--bdr2);border-radius:999px;height:8px;overflow:hidden;margin:10px 0 12px}
+.rfill{height:100%;border-radius:999px;transition:width .3s,background .3s}
+.sbox{border-radius:10px;padding:11px 14px;font-size:13px;line-height:1.5;font-weight:500}
+.sok{background:var(--teal-bg);border:1px solid #99f6e4;color:#0f766e}
+.swarn{background:var(--amb-bg);border:1px solid #fcd34d;color:#b45309}
+.sdan{background:var(--red-bg);border:1px solid #fda4af;color:#be123c}
+hr{border:none;border-top:1px solid var(--bdr2);margin:14px 0}
+.btnp{
+  background:linear-gradient(180deg,#14b8a6,#0d9488);
+  color:#fff;
+  border:none;
+  padding:10px 20px;
+  border-radius:10px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  font-family:inherit;
+  box-shadow:0 2px 6px rgba(13,148,136,.35);
+  transition:filter .15s,transform .1s;
+}
+.btnp:hover{filter:brightness(1.05)}
+.btnp:active{transform:translateY(1px)}
+.btnp:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.btns{background:var(--bg2);color:var(--txt);border:1px solid var(--bdr);padding:9px 16px;border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
 .btns:hover{background:var(--bg3)}
-.rbox{background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:18px;font-size:13.5px;line-height:1.85;color:var(--txt);white-space:pre-wrap;min-height:130px}
-.codebox{background:var(--bg3);border-radius:8px;padding:13px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mut);line-height:1.65;white-space:pre-wrap;max-height:280px;overflow-y:auto}
-.feat-sel{background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt);padding:5px 9px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif}
-.leg{display:flex;gap:14px;font-size:11.5px;color:var(--mut)}
-.ld{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:3px;flex-shrink:0}
-.banner{font-size:12px;padding:10px 14px;border-radius:8px;margin-bottom:14px;background:rgba(77,166,255,.12);border:1px solid rgba(77,166,255,.25);color:var(--blu)}
-.banner.err{background:rgba(255,79,94,.1);border-color:rgba(255,79,94,.25);color:var(--red)}
-a.nav-back{color:var(--teal);font-size:12px;text-decoration:none}
+.rbox{
+  background:var(--bg3);
+  border:1px solid var(--bdr2);
+  border-radius:12px;
+  padding:18px;
+  font-size:14px;
+  line-height:1.75;
+  color:var(--txt);
+  white-space:pre-wrap;
+  min-height:140px;
+}
+.codebox{
+  background:#1e293b;
+  border-radius:10px;
+  padding:14px;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;
+  color:#cbd5e1;
+  line-height:1.65;
+  white-space:pre-wrap;
+  max-height:280px;
+  overflow-y:auto;
+}
+.feat-sel{background:var(--bg2);border:1px solid var(--bdr);color:var(--txt);padding:6px 10px;border-radius:8px;font-size:13px;font-family:inherit}
+.leg{display:flex;gap:16px;font-size:12px;color:var(--mut);font-weight:500}
+.ld{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:4px;flex-shrink:0;vertical-align:middle}
+.banner{font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:16px;background:var(--blu-bg);border:1px solid #93c5fd;color:#1d4ed8;font-weight:500}
+.banner.err{background:var(--red-bg);border-color:#fda4af;color:#be123c}
+a.nav-back{color:var(--teal);font-size:13px;font-weight:600;text-decoration:none}
 a.nav-back:hover{text-decoration:underline}
-@media(max-width:680px){.g2,.g3,.g4{grid-template-columns:1fr}.hdr,.pane{padding:14px}.sr label,.selr label{min-width:120px}}
+@media(max-width:680px){.g2,.g4{grid-template-columns:1fr}.hdr,.pane{padding:16px}.sr label,.selr label{min-width:120px}}
 </style>
 </head>
 <body>
@@ -105,7 +230,7 @@ a.nav-back:hover{text-decoration:underline}
       <div class="ctitle" style="margin:0">Feature distribution by class</div>
       <div style="display:flex;align-items:center;gap:12px">
         <select class="feat-sel" id="dist-sel" onchange="renderDist()"></select>
-        <div class="leg"><span><span class="ld" style="background:rgba(0,212,170,.7)"></span>Normal</span><span><span class="ld" style="background:rgba(255,79,94,.7)"></span>Failure</span></div>
+        <div class="leg"><span><span class="ld" style="background:#14b8a6"></span>Normal</span><span><span class="ld" style="background:#f43f5e"></span>Failure</span></div>
       </div>
     </div>
     <div class="cw" style="height:195px"><canvas id="ch-dist"></canvas></div>
@@ -222,10 +347,32 @@ let _lastPred = null;
 let _rpTimer = null;
 
 const CHS = {};
-const TC = '#6b7080', GC = 'rgba(255,255,255,0.05)';
-function mkCh(id, cfg) { if (CHS[id]) CHS[id].destroy(); const el = document.getElementById(id); if (el) CHS[id] = new Chart(el, cfg); }
-const baseX = { ticks: { color: TC, font: { size: 11 } }, grid: { display: false }, border: { display: false } };
-const baseY = { ticks: { color: TC }, grid: { color: GC }, border: { display: false } };
+/** Solid colors for charts on light bg (old theme used translucent bars on #0c0e14 → looked gray). */
+const PAL = {
+  ok: '#14b8a6',
+  okHi: '#5eead4',
+  bad: '#f43f5e',
+  badHi: '#fb7185',
+  warn: '#f59e0b',
+  neut: '#94a3b8',
+  neutBar: '#cbd5e1',
+  tick: '#475569',
+  grid: '#e2e8f0',
+};
+function applyChartDefaults() {
+  if (typeof Chart === 'undefined') return;
+  Chart.defaults.color = PAL.tick;
+  Chart.defaults.borderColor = PAL.grid;
+  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+  Chart.defaults.plugins.legend.labels.color = PAL.tick;
+}
+function mkCh(id, cfg) {
+  if (CHS[id]) CHS[id].destroy();
+  const el = document.getElementById(id);
+  if (el) CHS[id] = new Chart(el, cfg);
+}
+const baseX = { ticks: { color: PAL.tick, font: { size: 11 } }, grid: { display: false }, border: { color: PAL.grid } };
+const baseY = { ticks: { color: PAL.tick }, grid: { color: PAL.grid }, border: { color: PAL.grid } };
 
 function showBanner(msg, err) {
   const b = document.getElementById('banner');
@@ -280,7 +427,7 @@ function getRowObject() {
 
 function renderEDA() {
   const n0 = DIAG.dataset.normal, n1 = DIAG.dataset.failure;
-  mkCh('ch-bal', { type: 'bar', data: { labels: ['Normal (0)', 'Failure (1)'], datasets: [{ data: [n0, n1], backgroundColor: ['rgba(0,212,170,.72)', 'rgba(255,79,94,.72)'], borderWidth: 0, borderRadius: 5 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY } } } });
+  mkCh('ch-bal', { type: 'bar', data: { labels: ['Normal (0)', 'Failure (1)'], datasets: [{ data: [n0, n1], backgroundColor: [PAL.ok, PAL.bad], borderWidth: 0, borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY, beginAtZero: true } } } });
 
   const corrs = DIAG.feature_cols.map((_, j) => {
     let m = 0, m0 = 0, m1 = 0, vr = 0;
@@ -300,14 +447,14 @@ function renderDist() {
   if ([2, 6, 7].includes(j)) {
     const c0 = [0, 1].map(v => rawX.filter((_, i) => rawY[i] === 0 && Math.round(rawX[i][j]) === v).length);
     const c1 = [0, 1].map(v => rawX.filter((_, i) => rawY[i] === 1 && Math.round(rawX[i][j]) === v).length);
-    mkCh('ch-dist', { type: 'bar', data: { labels: ['0', '1'], datasets: [{ label: 'Normal', data: c0, backgroundColor: 'rgba(0,212,170,.65)', borderWidth: 0, borderRadius: 3 }, { label: 'Failure', data: c1, backgroundColor: 'rgba(255,79,94,.65)', borderWidth: 0, borderRadius: 3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY } } } });
+    mkCh('ch-dist', { type: 'bar', data: { labels: ['0', '1'], datasets: [{ label: 'Normal', data: c0, backgroundColor: PAL.ok, borderWidth: 0, borderRadius: 4 }, { label: 'Failure', data: c1, backgroundColor: PAL.bad, borderWidth: 0, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY, beginAtZero: true } } } });
   } else {
     const v0 = rawX.filter((_, i) => rawY[i] === 0).map(r => r[j]);
     const v1 = rawX.filter((_, i) => rawY[i] === 1).map(r => r[j]);
     const all = [...v0, ...v1], mn = Math.min(...all), mx = Math.max(...all), BINS = 22, bw = (mx - mn) / BINS || 1;
     const labs = Array.from({ length: BINS }, (_, i) => (mn + (i + 0.5) * bw).toFixed(1));
     const bin = (vals) => { const c = new Array(BINS).fill(0); for (const v of vals) { const k = Math.min(Math.floor((v - mn) / bw), BINS - 1); c[k]++; } return c; };
-    mkCh('ch-dist', { type: 'bar', data: { labels: labs, datasets: [{ label: 'Normal', data: bin(v0), backgroundColor: 'rgba(0,212,170,.5)', borderWidth: 0, categoryPercentage: 1, barPercentage: 1 }, { label: 'Failure', data: bin(v1), backgroundColor: 'rgba(255,79,94,.5)', borderWidth: 0, categoryPercentage: 1, barPercentage: 1 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX, ticks: { ...baseX.ticks, font: { size: 9 }, maxTicksLimit: 8, maxRotation: 0 } }, y: { ...baseY } } } });
+    mkCh('ch-dist', { type: 'bar', data: { labels: labs, datasets: [{ label: 'Normal', data: bin(v0), backgroundColor: PAL.okHi, borderWidth: 0, categoryPercentage: 1, barPercentage: 1 }, { label: 'Failure', data: bin(v1), backgroundColor: PAL.badHi, borderWidth: 0, categoryPercentage: 1, barPercentage: 1 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX, ticks: { ...baseX.ticks, font: { size: 9 }, maxTicksLimit: 8, maxRotation: 0 } }, y: { ...baseY, beginAtZero: true } } } });
   }
 }
 
@@ -323,7 +470,7 @@ function buildStatsTable() {
     const s0 = Math.sqrt(g0.reduce((s, v) => s + (v - m0) ** 2 / n0, 0)), s1 = Math.sqrt(g1.reduce((s, v) => s + (v - m1) ** 2 / n1, 0));
     const d = m1 - m0;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="font-weight:500">${FFULL[j]}</td><td class="mono">${m0.toFixed(2)}</td><td class="mono">${s0.toFixed(2)}</td><td class="mono" style="color:var(--red)">${m1.toFixed(2)}</td><td class="mono" style="color:var(--red)">${s1.toFixed(2)}</td><td class="mono" style="font-weight:500;color:${d > 0 ? 'var(--red)' : 'var(--teal)'}">${d > 0 ? '+' : ''}${d.toFixed(2)}</td>`;
+    tr.innerHTML = `<td style="font-weight:600">${FFULL[j]}</td><td class="mono">${m0.toFixed(2)}</td><td class="mono">${s0.toFixed(2)}</td><td class="mono" style="color:#e11d48">${m1.toFixed(2)}</td><td class="mono" style="color:#e11d48">${s1.toFixed(2)}</td><td class="mono" style="font-weight:600;color:${d > 0 ? '#e11d48' : '#0d9488'}">${d > 0 ? '+' : ''}${d.toFixed(2)}</td>`;
     tb.appendChild(tr);
   });
   t.appendChild(tb);
@@ -336,7 +483,7 @@ function renderManova() {
   for (const row of DIAG.manova.table_rows) {
     const sig = row.significant;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="mono">${row.effect}</td><td>${row.test}</td><td class="mono">${row.value != null ? row.value.toFixed(5) : '—'}</td><td class="mono">${row.f_value != null ? row.f_value.toFixed(3) : '—'}</td><td class="mono">${row.num_df != null ? row.num_df : '—'}</td><td class="mono">${row.den_df != null ? row.den_df : '—'}</td><td class="mono" style="color:${sig ? 'var(--red)' : 'var(--mut)'}">${row.p_value != null ? Number(row.p_value).toFixed(6) : '—'}</td><td><span class="badge ${sig ? 'br' : 'ba'}">${sig ? 'Significant' : 'Not sig.'}</span></td>`;
+    tr.innerHTML = `<td class="mono">${row.effect}</td><td>${row.test}</td><td class="mono">${row.value != null ? row.value.toFixed(5) : '—'}</td><td class="mono">${row.f_value != null ? row.f_value.toFixed(3) : '—'}</td><td class="mono">${row.num_df != null ? row.num_df : '—'}</td><td class="mono">${row.den_df != null ? row.den_df : '—'}</td><td class="mono" style="color:${sig ? '#e11d48' : '#64748b'}">${row.p_value != null ? Number(row.p_value).toFixed(6) : '—'}</td><td><span class="badge ${sig ? 'br' : 'ba'}">${sig ? 'Significant' : 'Not sig.'}</span></td>`;
     mb.appendChild(tr);
   }
   mt.appendChild(mb);
@@ -355,7 +502,7 @@ function renderManova() {
   const sorted = [...DIAG.manova.univariate_rows].sort((a, b) => a.p - b.p);
   const logP = sorted.map(u => +(-Math.log10(u.p + 1e-300)).toFixed(2));
   const thresh = -Math.log10(0.05);
-  mkCh('ch-pval', { type: 'bar', data: { labels: sorted.map(u => u.feature), datasets: [{ data: logP, backgroundColor: logP.map(v => v > thresh ? 'rgba(255,79,94,.75)' : 'rgba(107,112,128,.4)'), borderWidth: 0, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY, title: { display: true, text: '−log₁₀(p)', color: TC, font: { size: 11 } } } } } });
+  mkCh('ch-pval', { type: 'bar', data: { labels: sorted.map(u => u.feature), datasets: [{ data: logP, backgroundColor: logP.map(v => v > thresh ? PAL.bad : PAL.neutBar), borderWidth: 0, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseX }, y: { ...baseY, beginAtZero: true, title: { display: true, text: '−log₁₀(p)', color: PAL.tick, font: { size: 11 } } } } } });
 }
 
 function renderPredict() {
@@ -367,10 +514,10 @@ function renderPredict() {
 
   const cm = s.confusion_matrix;
   const tn = cm[0][0], fp = cm[0][1], fn = cm[1][0], tp = cm[1][1];
-  mkCh('ch-cm', { type: 'bar', data: { labels: ['True normal', 'True failure'], datasets: [{ label: 'Predicted normal', data: [tn, fn], backgroundColor: 'rgba(0,212,170,.72)', borderWidth: 0, borderRadius: 3 }, { label: 'Predicted failure', data: [fp, tp], backgroundColor: 'rgba(255,79,94,.72)', borderWidth: 0, borderRadius: 3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: TC, font: { size: 11 } } } }, scales: { x: { ...baseX }, y: { ...baseY } } } });
+  mkCh('ch-cm', { type: 'bar', data: { labels: ['True normal', 'True failure'], datasets: [{ label: 'Predicted normal', data: [tn, fn], backgroundColor: PAL.ok, borderWidth: 0, borderRadius: 4 }, { label: 'Predicted failure', data: [fp, tp], backgroundColor: PAL.bad, borderWidth: 0, borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: PAL.tick, font: { size: 11 } } } }, scales: { x: { ...baseX }, y: { ...baseY, beginAtZero: true } } } });
 
   const fw = Object.entries(s.feat_weights).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  mkCh('ch-wt', { type: 'bar', data: { labels: fw.map(x => x[0]), datasets: [{ data: fw.map(x => +x[1].toFixed(4)), backgroundColor: fw.map(x => x[1] > 0 ? 'rgba(255,79,94,.72)' : 'rgba(0,212,170,.72)'), borderWidth: 0, borderRadius: 3 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseY }, y: { ...baseX } } } });
+  mkCh('ch-wt', { type: 'bar', data: { labels: fw.map(x => x[0]), datasets: [{ data: fw.map(x => +x[1].toFixed(4)), backgroundColor: fw.map(x => x[1] > 0 ? PAL.bad : PAL.ok), borderWidth: 0, borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseY }, y: { ...baseX } } } });
   rp();
 }
 
@@ -388,20 +535,20 @@ async function rp() {
       if (!res.ok) throw new Error(pred.error || 'predict failed');
       _lastPred = pred;
       const risk = pred.probability_failure_pct;
-      const col = risk >= 60 ? 'var(--red)' : risk >= 30 ? 'var(--amb)' : 'var(--teal)';
+      const col = risk >= 60 ? '#e11d48' : risk >= 30 ? '#d97706' : '#0d9488';
       document.getElementById('r-pct').textContent = risk.toFixed(1) + '%';
       document.getElementById('r-pct').style.color = col;
       document.getElementById('dscore').textContent = pred.decision_function != null ? pred.decision_function.toFixed(4) : '—';
       const rf = document.getElementById('r-fill');
       rf.style.width = risk + '%';
-      rf.style.background = risk >= 60 ? '#ff4f5e' : risk >= 30 ? '#f0a830' : '#00d4aa';
+      rf.style.background = risk >= 60 ? PAL.bad : risk >= 30 ? PAL.warn : PAL.ok;
       const sb = document.getElementById('sbox');
       if (risk >= 60) { sb.className = 'sbox sdan'; sb.innerHTML = '<strong>Failure risk high</strong> — RBF SVM probability elevated.'; }
       else if (risk >= 30) { sb.className = 'sbox swarn'; sb.innerHTML = '<strong>Elevated risk</strong> — near decision boundary.'; }
       else { sb.className = 'sbox sok'; sb.innerHTML = '<strong>Normal region</strong> — reading consistent with training class 0.'; }
 
       const contribs = DIAG.feature_cols.map(f => ({ f, c: pred.contributions[f] }));
-      mkCh('ch-contrib', { type: 'bar', data: { labels: contribs.map(c => c.f), datasets: [{ data: contribs.map(c => c.c), backgroundColor: contribs.map(c => c.c > 0 ? 'rgba(255,79,94,.76)' : 'rgba(0,212,170,.76)'), borderWidth: 0, borderRadius: 3 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseY, title: { display: true, text: 'contribution', color: TC, font: { size: 10 } } }, y: { ...baseX } } } });
+      mkCh('ch-contrib', { type: 'bar', data: { labels: contribs.map(c => c.f), datasets: [{ data: contribs.map(c => c.c), backgroundColor: contribs.map(c => c.c > 0 ? PAL.bad : PAL.ok), borderWidth: 0, borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ...baseY, title: { display: true, text: 'contribution', color: PAL.tick, font: { size: 10 } } }, y: { ...baseX } } } });
       const top = contribs.filter(c => c.c > 0).sort((a, b) => b.c - a.c).slice(0, 2);
       const bot = contribs.filter(c => c.c < 0).sort((a, b) => a.c - b.c).slice(0, 2);
       document.getElementById('exp-txt').innerHTML = `Toward failure: ${top.map(c => `<strong>${c.f}</strong> (+${c.c.toFixed(3)})`).join(', ') || 'none'}. Toward normal: ${bot.map(c => `<strong>${c.f}</strong> (${c.c.toFixed(3)})`).join(', ') || 'none'}.`;
@@ -474,7 +621,11 @@ function sw(id, btn) {
 window.addEventListener('load', async () => {
   try {
     await loadDiag();
-    const go = () => typeof Chart !== 'undefined' ? renderEDA() : setTimeout(go, 80);
+    const go = () => {
+      if (typeof Chart === 'undefined') { setTimeout(go, 80); return; }
+      applyChartDefaults();
+      renderEDA();
+    };
     go();
     window.speechSynthesis.getVoices();
   } catch (e) {

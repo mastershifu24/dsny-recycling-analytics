@@ -710,6 +710,28 @@ def ask():
         except (requests.RequestException, RuntimeError) as e:
             return jsonify({"answer": str(e)})
 
+    # Truck/street routes are not in SODA tonnage data—avoid a random borough row + Gemini sounding like "the answer"
+    route_nav = (
+        "route" in q
+        or "routes" in q
+        or "routing" in q
+        or re.search(r"\b(best|fastest|shortest|optimal)\b.+\b(route|path|way)\b", q)
+        or re.search(r"\b(route|path)\b.+\b(best|fastest|shortest)\b", q)
+    )
+    if route_nav:
+        return jsonify(
+            {
+                "answer": (
+                    "This tool does not rank or optimize garbage truck routes. NYC Open Data here does not "
+                    "include turn-by-turn or street-level routing. The dataset is monthly refuse tonnage "
+                    "(borough / community district)—good for trends, not pickup paths.\n\n"
+                    "Try instead: “Bronx refuse tons trend” or “Queens recycling month over month.” "
+                    "For which day trash is collected at a stop, ask about pickup schedule and use a street "
+                    "address—we link the official DSNY collection lookup."
+                ),
+            }
+        )
+
     kw = (
         "predict",
         "forecast",

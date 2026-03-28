@@ -3,111 +3,263 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
   <title>DSNY Recycling Analytics</title>
   <style>
     :root {
-      font-size: 18px;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --accent: #0d9488;
+      --accent-dim: #ccfbf1;
+      --warn-bg: #fff7ed;
+      --warn-border: #fdba74;
+      --radius: 12px;
+      font-size: 17px;
     }
+    * { box-sizing: border-box; }
     body {
-      font-family: system-ui, "Segoe UI", sans-serif;
-      max-width: 40rem;
-      margin: 0 auto;
-      padding: 1rem 1.25rem 2rem;
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      color: var(--text);
+      background: linear-gradient(180deg, #e0f2fe 0%, var(--bg) 28%);
       line-height: 1.55;
-      color: #1a1a1a;
-      background: #fafafa;
+      min-height: 100vh;
     }
-    h1 { font-size: 1.35rem; margin-bottom: 0.35rem; }
-    .tag { font-size: 0.95rem; color: #444; margin: 0 0 0.75rem; }
+    .wrap {
+      max-width: 36rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2.5rem;
+    }
+    header { margin-bottom: 1.25rem; }
+    h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+      line-height: 1.2;
+    }
+    .tag {
+      font-size: 0.95rem;
+      color: var(--muted);
+      margin: 0;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 0.65rem;
+      font-weight: 600;
+    }
     .lead {
       font-size: 1rem;
-      margin: 0 0 1rem;
+      margin: 0;
     }
+    .lead strong { color: var(--text); }
     .examples {
-      font-size: 0.95rem;
-      margin: 0 0 1rem;
-      padding-left: 1.2rem;
+      margin: 0.5rem 0 0;
+      padding-left: 1.15rem;
+      font-size: 0.98rem;
     }
-    .examples li { margin: 0.35rem 0; }
+    .examples li { margin: 0.4rem 0; }
+    .callout {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      font-size: 0.92rem;
+      color: #9a3412;
+      margin-top: 0.75rem;
+      line-height: 1.5;
+    }
+    .callout strong { color: #7c2d12; }
+    .links {
+      font-size: 0.92rem;
+      margin: 0;
+    }
+    .links a {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    label {
+      display: block;
+      margin-top: 0.75rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+    }
+    label:first-child { margin-top: 0; }
+    .hint {
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
     button {
-      font-size: 1.05rem;
-      padding: 0.75rem 1.25rem;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 0.65rem 1.1rem;
       min-height: 44px;
       min-width: 44px;
       cursor: pointer;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #fff;
-      margin: 0 0.5rem 0.5rem 0;
+      border-radius: 10px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      margin: 0.5rem 0.5rem 0 0;
+      font-family: inherit;
     }
-    button:active { background: #eee; }
-    label { display: block; margin-top: 1rem; font-weight: 700; font-size: 1rem; }
-    #photoQ { min-height: 3rem; }
+    button:hover { filter: brightness(1.05); }
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    button.secondary {
+      background: var(--card);
+      color: var(--accent);
+    }
+    input[type="file"] {
+      font-size: 0.9rem;
+      margin-top: 0.35rem;
+      max-width: 100%;
+    }
     textarea {
       width: 100%;
       max-width: 100%;
-      min-height: 5rem;
+      min-height: 4.5rem;
       font: inherit;
-      padding: 0.75rem;
-      box-sizing: border-box;
-      border-radius: 8px;
-      border: 1px solid #ccc;
+      padding: 0.65rem 0.75rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-top: 0.35rem;
+      resize: vertical;
     }
-    .row { margin-top: 0.75rem; }
-    a.source { font-size: 0.95rem; }
-    #transcript { color: #444; font-size: 0.95rem; margin-top: 1rem; }
+    textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: var(--accent);
+    }
+    #photoQ { min-height: 2.75rem; }
+    .out-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 600;
+      margin: 1.25rem 0 0.35rem;
+    }
+    #transcript {
+      color: var(--muted);
+      font-size: 0.95rem;
+      margin: 0;
+      padding: 0.5rem 0 0;
+    }
     #result {
-      margin-top: 1rem;
+      margin: 0;
+      font-size: 1.02rem;
+      line-height: 1.6;
+      padding: 1rem 1.1rem;
+      background: var(--accent-dim);
+      border: 1px solid #99f6e4;
+      border-radius: var(--radius);
+      min-height: 3.5rem;
       white-space: pre-wrap;
-      font-size: 1.05rem;
-      padding: 1rem;
+      word-wrap: break-word;
+      color: var(--text);
+    }
+    #result.is-placeholder {
+      color: var(--muted);
+      font-style: italic;
+    }
+    .kbd {
+      font-family: ui-monospace, monospace;
+      font-size: 0.8em;
+      padding: 0.1em 0.35em;
+      border: 1px solid var(--border);
+      border-radius: 4px;
       background: #fff;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-      min-height: 3rem;
     }
   </style>
 </head>
 <body>
-  <h1>DSNY Recycling Analytics</h1>
-  <p class="tag">For sanitation crews &amp; truck drivers · voice or text · NYC open data</p>
-  <p class="lead">
-    <strong>Problem:</strong> Wrong trash in recycling ruins loads—and stopping to write it all up is brutal on a route.
-    <strong>This app:</strong> use <strong>voice or text</strong> to pull <strong>city data</strong> (borough refuse trends, context) without forms.
-    It does <strong>not</strong> replace paperwork for enforcement; it gives fast <strong>facts from open data</strong> and links for pickup-day questions (address-based).
-  </p>
-  <p><strong>Try asking:</strong></p>
-  <ul class="examples">
-    <li>“Bronx refuse trend month over month”</li>
-    <li>“When is garbage day in Queens” (we link the official schedule—you need an address for your stop)</li>
-  </ul>
-  <p>
-    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Data: NYC DSNY Monthly Tonnage (open data)</a>
-    · <a class="source" href="/metropt3">MetroPT-3 diagnostics demo</a> (separate predictive-maintenance UI)
-  </p>
+  <div class="wrap">
+    <header>
+      <h1>DSNY Recycling Analytics</h1>
+      <p class="tag">Sanitation crews &amp; drivers · voice or text · NYC Open Data</p>
+    </header>
 
-  <div class="row">
-    <button type="button" id="startBtn">Speak question</button>
-  </div>
+    <section class="card" aria-labelledby="about-h">
+      <h2 id="about-h">What this is</h2>
+      <p class="lead">
+        Quick <strong>borough-level refuse / recycling trends</strong> from published city numbers—no long forms.
+        For <strong>pickup day</strong>, we point you to the <strong>official address lookup</strong> (you need a real street address).
+      </p>
+      <div class="callout" role="note">
+        <strong>Not included:</strong> truck routes, turn-by-turn directions, or “best route” rankings. That isn’t in this dataset.
+      </div>
+    </section>
 
-  <p><strong>Photo check (demo):</strong> point camera at a pile—needs <code>GEMINI_API_KEY</code> on the server. Citation output is a <strong>stub</strong>, not a real ticket.</p>
-  <div class="row">
-    <input type="file" id="photoInput" accept="image/*" />
-  </div>
-  <label for="photoQ">Optional note with the photo</label>
-  <textarea id="photoQ" placeholder="e.g. Gemini, check this pile for recycling contamination."></textarea>
-  <div class="row">
-    <button type="button" id="photoBtn">Analyze photo</button>
-  </div>
+    <section class="card">
+      <h2>Try asking</h2>
+      <ul class="examples">
+        <li>“Bronx refuse trend month over month”</li>
+        <li>“Queens recycling tons last year”</li>
+        <li>“When is garbage pickup” (then use an <strong>address</strong> for your stop)</li>
+      </ul>
+      <p class="links" style="margin-top:0.75rem">
+        <a href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">NYC tonnage data (open data)</a>
+        · <a href="/metropt3">MetroPT-3 demo</a>
+      </p>
+    </section>
 
-  <label for="textQ">Type a question</label>
-  <textarea id="textQ" placeholder="Example: Queens refuse tons trend last few months."></textarea>
-  <div class="row">
-    <button type="button" id="sendBtn">Get answer</button>
-  </div>
+    <section class="card" aria-labelledby="voice-h">
+      <h2 id="voice-h">Voice</h2>
+      <button type="button" class="secondary" id="startBtn">Speak question</button>
+      <p class="hint">Uses your browser’s microphone (English).</p>
+    </section>
 
-  <p id="transcript"></p>
-  <p id="result"></p>
+    <section class="card" aria-labelledby="photo-h">
+      <h2 id="photo-h">Photo check (demo)</h2>
+      <p class="hint" style="margin:0 0 0.5rem">
+        Needs <code>GEMINI_API_KEY</code> on the server. Any “citation” is a <strong>stub</strong>, not a real ticket.
+      </p>
+      <label for="photoInput">Choose a photo</label>
+      <input type="file" id="photoInput" accept="image/*" />
+      <label for="photoQ">Optional note</label>
+      <p class="hint">e.g. check this pile for recycling contamination</p>
+      <textarea id="photoQ" placeholder="Short note to send with the image…"></textarea>
+      <button type="button" id="photoBtn">Analyze photo</button>
+    </section>
+
+    <section class="card" aria-labelledby="text-h">
+      <h2 id="text-h">Type a question</h2>
+      <label for="textQ">Your question</label>
+      <textarea id="textQ" placeholder="Example: Bronx refuse tons trend."></textarea>
+      <p class="hint">Tip: <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span> to send</p>
+      <button type="button" id="sendBtn">Get answer</button>
+    </section>
+
+    <div class="out-label">Your question</div>
+    <p id="transcript" aria-live="polite"></p>
+    <div class="out-label">Answer</div>
+    <div id="result" role="status" aria-live="polite"></div>
+  </div>
   <script src="/script.js"></script>
 </body>
 </html>

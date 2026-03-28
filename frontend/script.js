@@ -5,14 +5,21 @@
   const transcriptP = document.getElementById("transcript");
   const resultP = document.getElementById("result");
 
+  function setResult(text, placeholder) {
+    resultP.textContent = text;
+    resultP.classList.toggle("is-placeholder", !!placeholder);
+  }
+
+  setResult("Answers will appear here after you ask.", true);
+
   async function askBackend(question) {
     const q = (question || "").trim();
     if (!q) {
-      resultP.textContent = "Enter a question or use the microphone.";
+      setResult("Type a question above, or tap “Speak question.”", true);
       return;
     }
     transcriptP.textContent = "You asked: " + q;
-    resultP.textContent = "Thinking…";
+    setResult("Thinking…", false);
     try {
       const res = await fetch("/ask", {
         method: "POST",
@@ -20,9 +27,12 @@
         body: JSON.stringify({ question: q }),
       });
       const data = await res.json();
-      resultP.textContent = data.answer || "No answer yet.";
+      setResult(data.answer || "No answer yet.", false);
     } catch (e) {
-      resultP.textContent = "Request failed: " + (e && e.message ? e.message : String(e));
+      setResult(
+        "Request failed: " + (e && e.message ? e.message : String(e)),
+        false
+      );
     }
   }
 
@@ -48,12 +58,12 @@
   recognition.interimResults = false;
 
   startBtn.addEventListener("click", () => {
-    resultP.textContent = "Listening…";
+    setResult("Listening…", false);
     recognition.start();
   });
 
   recognition.onerror = (ev) => {
-    resultP.textContent = "Speech error: " + (ev.error || "unknown");
+    setResult("Speech error: " + (ev.error || "unknown"), false);
   };
 
   recognition.onresult = (event) => {
@@ -69,11 +79,11 @@
     photoBtn.addEventListener("click", async () => {
       const file = photoInput.files && photoInput.files[0];
       if (!file) {
-        resultP.textContent = "Choose a photo first.";
+        setResult("Choose a photo first.", true);
         return;
       }
       transcriptP.textContent = "";
-      resultP.textContent = "Analyzing photo…";
+      setResult("Analyzing photo…", false);
       const fd = new FormData();
       fd.append("image", file);
       if (photoQ && photoQ.value.trim()) {
@@ -83,18 +93,22 @@
         const res = await fetch("/analyze-image", { method: "POST", body: fd });
         const data = await res.json();
         if (data.error) {
-          resultP.textContent =
-            data.error + (data.disclaimer ? "\n\n" + data.disclaimer : "");
+          setResult(
+            data.error + (data.disclaimer ? "\n\n" + data.disclaimer : ""),
+            false
+          );
           return;
         }
         let out = data.answer || "";
         if (data.disclaimer) {
           out += "\n\n" + data.disclaimer;
         }
-        resultP.textContent = out || "No answer.";
+        setResult(out || "No answer.", false);
       } catch (e) {
-        resultP.textContent =
-          "Request failed: " + (e && e.message ? e.message : String(e));
+        setResult(
+          "Request failed: " + (e && e.message ? e.message : String(e)),
+          false
+        );
       }
     });
   }
