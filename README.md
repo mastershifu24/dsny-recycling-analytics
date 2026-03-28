@@ -40,7 +40,16 @@ python main.py
 
 Open **http://127.0.0.1:5000/**.
 
-### Optional: Gemini
+### Optional: Gemini (local)
+
+**Recommended:** copy **`.env.example`** to **`.env`** in the **repo root** (same folder as `Dockerfile`), then set `GEMINI_API_KEY=...`. That file is **gitignored**.
+
+```powershell
+copy .env.example .env
+# Edit .env and paste your key from https://aistudio.google.com/apikey
+```
+
+Or set the variable for one session:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-key"

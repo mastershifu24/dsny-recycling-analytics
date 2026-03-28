@@ -20,6 +20,15 @@ import requests
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+# Load repo-root .env (gitignored—see .env.example)
+_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(_ROOT, ".env"))
+except ImportError:
+    pass
+
 DATASET_ID = os.environ.get("NYC_SODA_DATASET", "ebb7-mvp5").strip() or "ebb7-mvp5"
 SODA_RESOURCE = f"https://data.cityofnewyork.us/resource/{DATASET_ID}.json"
 SCHEDULE_DATASET_ID = os.environ.get("NYC_SCHEDULE_DATASET", "p7k6-2pm8").strip() or "p7k6-2pm8"
