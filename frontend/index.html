@@ -5,35 +5,89 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DSNY Recycling Analytics</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-    button { font-size: 1rem; padding: 0.6rem 1rem; cursor: pointer; margin-right: 0.5rem; }
-    .hint { color: #555; font-size: 0.9rem; }
-    #result { margin-top: 1rem; white-space: pre-wrap; }
-    label { display: block; margin-top: 1rem; font-weight: 600; }
-    textarea { width: 100%; max-width: 100%; min-height: 4rem; font: inherit; padding: 0.5rem; box-sizing: border-box; }
+    :root {
+      font-size: 18px;
+    }
+    body {
+      font-family: system-ui, "Segoe UI", sans-serif;
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 2rem;
+      line-height: 1.55;
+      color: #1a1a1a;
+      background: #fafafa;
+    }
+    h1 { font-size: 1.35rem; margin-bottom: 0.5rem; }
+    .lead {
+      font-size: 1rem;
+      margin: 0 0 1rem;
+    }
+    .examples {
+      font-size: 0.95rem;
+      margin: 0 0 1rem;
+      padding-left: 1.2rem;
+    }
+    .examples li { margin: 0.35rem 0; }
+    button {
+      font-size: 1.05rem;
+      padding: 0.75rem 1.25rem;
+      min-height: 44px;
+      min-width: 44px;
+      cursor: pointer;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #fff;
+      margin: 0 0.5rem 0.5rem 0;
+    }
+    button:active { background: #eee; }
+    label { display: block; margin-top: 1rem; font-weight: 700; font-size: 1rem; }
+    textarea {
+      width: 100%;
+      max-width: 100%;
+      min-height: 5rem;
+      font: inherit;
+      padding: 0.75rem;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
     .row { margin-top: 0.75rem; }
-    a.source { font-size: 0.9rem; }
+    a.source { font-size: 0.95rem; }
+    #transcript { color: #444; font-size: 0.95rem; margin-top: 1rem; }
+    #result {
+      margin-top: 1rem;
+      white-space: pre-wrap;
+      font-size: 1.05rem;
+      padding: 1rem;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      min-height: 3rem;
+    }
   </style>
 </head>
 <body>
   <h1>DSNY Recycling Analytics</h1>
-  <p class="hint">
-    Voice or text over <strong>NYC Open Data</strong> — <strong>DSNY Monthly Tonnage</strong> (refuse / MGP / paper / organics by borough &amp; month).
-    Ask for <strong>trends</strong>, <strong>shift</strong> / <strong>month over month</strong>, or a <strong>borough</strong>.
-    Optional: set <code>NYC_SODA_DATASET=c23c-uwsm</code> for SweepNYC street cleaning.
+  <p class="lead">
+    Ask in <strong>voice</strong> or <strong>text</strong>. We use <strong>city open data</strong> (monthly refuse tons by borough)—not pickup days or your route sheet.
   </p>
+  <p><strong>Try asking:</strong></p>
+  <ul class="examples">
+    <li>“Bronx refuse trend and month over month”</li>
+    <li>“Queens recycling tons last few months”</li>
+  </ul>
   <p>
-    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Dataset: DSNY Monthly Tonnage (ebb7-mvp5)</a>
+    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Data: DSNY Monthly Tonnage</a>
   </p>
 
   <div class="row">
-    <button type="button" id="startBtn">Ask with microphone</button>
+    <button type="button" id="startBtn">Speak question</button>
   </div>
 
-  <label for="textQ">Or type a question</label>
-  <textarea id="textQ" placeholder="e.g. Show recycling tonnage trend and shift. Bronx refuse month over month."></textarea>
+  <label for="textQ">Type a question</label>
+  <textarea id="textQ" placeholder="Example: Bronx refuse tons trend and change from last month."></textarea>
   <div class="row">
-    <button type="button" id="sendBtn">Send</button>
+    <button type="button" id="sendBtn">Get answer</button>
   </div>
 
   <p id="transcript"></p>

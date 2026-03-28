@@ -238,25 +238,58 @@ def summary_from_rows(rows: list[dict], borough_note: str = "") -> dict[str, Any
     }
 
 
+def _pressure_plain(band: Optional[str]) -> str:
+    """Short plain-language line for ops (no z-score jargon)."""
+    if not band:
+        return ""
+    return {
+        "far_below_typical": "Unusually low compared with the last several months in this pull.",
+        "below_typical": "A bit below usual compared with recent months in this pull.",
+        "typical": "Close to usual compared with recent months in this pull.",
+        "above_typical": "Above usual compared with recent months in this pull.",
+        "far_above_typical": "Unusually high compared with the last several months in this pull.",
+        "insufficient_history": "Not enough months in this data pull to judge “usual” yet.",
+    }.get(band, "")
+
+
 def format_summary_text(s: dict[str, Any]) -> str:
-    head = f"Loaded {s['sample_rows_used']} rows ({DATASET_ID})."
     if s.get("kind") == "tonnage":
+        note = s.get("borough_filter_note") or "all boroughs"
         tail = (s.get("monthly_with_shift") or [])[-4:]
-        bits = [f"{x['month']}: {x['refuse_tons_sum_in_sample']}t refuse" for x in tail]
+        bits = [
+            f"{x['month']}: about {float(x['refuse_tons_sum_in_sample']):,.0f} tons refuse"
+            for x in tail
+        ]
         last = (s.get("monthly_with_shift") or [])[-1:] or [{}]
         mom = last[0].get("month_over_month_change_tons")
         yoy = last[0].get("year_over_year_change_tons")
         pr = s.get("pressure_risk") or {}
-        z = pr.get("pressure_z_score")
         band = pr.get("pressure_band")
-        extra = f" Latest MoM Δ {mom}t." if mom is not None else ""
+        lines = [
+            f"Area: {note}. Monthly refuse (tons) from NYC Open Data — recent months: "
+            + "; ".join(bits)
+            + "."
+        ]
+        if mom is not None:
+            up = float(mom) > 0
+            lines.append(
+                f"Versus the month before: {'up' if up else 'down'} about {abs(float(mom)):,.0f} tons."
+            )
         if yoy is not None:
-            extra += f" YoY Δ {yoy}t."
-        if z is not None and band:
-            extra += f" Pressure z={z} ({band})."
-        elif band == "insufficient_history":
-            extra += " Need more months in sample for pressure z-score."
-        return f"{head} Scope: {s.get('borough_filter_note')}. " + "; ".join(bits) + extra + " " + s.get("disclaimer", "")
+            upy = float(yoy) > 0
+            lines.append(
+                f"Versus the same month last year: {'up' if upy else 'down'} about {abs(float(yoy)):,.0f} tons."
+            )
+        plain = _pressure_plain(band) if band else ""
+        if plain:
+            lines.append(plain)
+        lines.append(
+            "Note: this is monthly totals in the public data—not pickup days, routes, or your personal schedule. "
+            + s.get("disclaimer", "")
+        )
+        return " ".join(lines)
+
+    head = f"Loaded {s['sample_rows_used']} rows ({DATASET_ID})."
     mc = s.get("monthly_visit_counts") or []
     tail = mc[-4:]
     bits = [f"{x['month']}: {x['count']} rows" for x in tail]
@@ -272,8 +305,8 @@ def fmt_row(row: dict) -> str:
     if IS_TONNAGE:
         r = {str(k).lower(): v for k, v in row.items()}
         return (
-            f"{r.get('month')} {r.get('borough')} CD{r.get('communitydistrict')}: "
-            f"refuse={r.get('refusetonscollected')}t"
+            f"{r.get('month')} · {r.get('borough')} · District {r.get('communitydistrict')}: "
+            f"about {r.get('refusetonscollected')} tons refuse (single row in the data)."
         )
     return str(list(row.items())[:8])
 
@@ -292,7 +325,9 @@ def gemini_answer(q: str, label: str, ctx: dict, fallback: str) -> str:
         m = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", "gemini-1.5-flash") or "gemini-1.5-flash")
         payload = json.dumps(ctx, default=str)[:14000]
         r = m.generate_content(
-            f"Explain this NYC open data JSON briefly. Use only facts in JSON.\n{label}\n\n{payload}\n\nQ: {q}"
+            "You help sanitation crews and ops staff. Reply in short plain English. "
+            "No unexplained abbreviations (say 'month-to-month' not MoM). Use only facts in the JSON.\n"
+            f"{label}\n\n{payload}\n\nQ: {q}"
         )
         t = (getattr(r, "text", None) or "").strip()
         return t or fallback
@@ -459,7 +494,7 @@ def ask():
 
     return jsonify(
         {
-            "answer": 'Try: "recycling tonnage trend and shift" or "Bronx refuse month over month".',
+            "answer": 'Try: "Bronx refuse tons trend" or "month over month change in Queens".',
         }
     )
 
