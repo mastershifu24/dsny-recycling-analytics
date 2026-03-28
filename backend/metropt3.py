@@ -149,24 +149,55 @@ def parse_metropt_sensor_paste(raw: str) -> Optional[dict[str, Any]]:
 
 
 def metropt3_paste_intro_text(readings: dict[str, Any], pred: dict[str, Any]) -> str:
-    """Plain-text lead when the user pasted sensor readings into /ask."""
+    """Plain-text lead when the user pasted sensor readings into /ask (crew-friendly)."""
     contribs = pred.get("contributions") or {}
-    top = sorted(contribs.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+    top = sorted(contribs.items(), key=lambda x: abs(x[1]), reverse=True)[:4]
+    cls = pred.get("class_label", "Unknown")
+    risk = float(pred.get("probability_failure_pct") or 0)
+    if cls == "Normal" and risk < 25:
+        status = "For this practice model, your numbers look like a normal, healthy readout."
+    else:
+        status = "For this practice model, your numbers look closer to the “problem” pattern in the training demo."
+
     lines = [
-        "MetroPT-3 demo (synthetic training data—not live DSNY fleet telemetry).",
-        f"From your readings, the RBF SVM estimates {pred['probability_failure_pct']:.1f}% failure risk → {pred['class_label']}.",
+        "Equipment readout (MetroPT-3 practice model — synthetic training data, not live DSNY truck telematics).",
+        status,
+        f"Estimated failure chance in this demo: {risk:.1f}% — labeled {cls} here.",
     ]
     df = pred.get("decision_function")
     if df is not None:
-        lines.append(f"Decision margin: {df:.4f} (more positive → more toward failure).")
+        lines.append(
+            f"Mechanics’ margin score: {df:.3f} (higher = leans toward the failure pattern in this demo)."
+        )
     if top:
         lines.append(
-            "Approx. feature contributions: "
-            + ", ".join(f"{k} ({v:+.3f})" for k, v in top)
+            "What pulled the score most (approx., not a repair order): "
+            + ", ".join(f"{FEATURE_LABELS.get(k, k)} ({v:+.2f})" for k, v in top)
             + "."
         )
-    lines.append("Full charts & paste box: open /metropt3")
     return "\n".join(lines)
+
+
+def metropt3_paste_operator_fallback(ctx: dict[str, Any], pred: dict[str, Any]) -> str:
+    """When Gemini is off: short backup for pasted readings only (no duplicate model metrics)."""
+    cls = pred.get("class_label", "Unknown")
+    risk = float(pred.get("probability_failure_pct") or 0)
+    if cls == "Normal" and risk < 25:
+        next_line = (
+            "If this were real fleet data, you’d keep normal checks and only call the shop when something "
+            "still looks wrong on the truck or in your yard’s process."
+        )
+    else:
+        next_line = (
+            "If this were real fleet data, you’d follow your depot’s rules: usually stop, tell a supervisor, "
+            "and let the shop diagnose before you rely on that unit."
+        )
+    return (
+        "—\n"
+        "Reminder: this is a classroom-style demo. It is not a work order, a safety sign-off, or live DSNY diagnostics.\n"
+        f"{next_line}\n"
+        "Charts and sliders: /metropt3 in this app."
+    )
 
 
 def load_dataset() -> pd.DataFrame:

@@ -552,6 +552,45 @@ def gemini_answer(q: str, label: str, ctx: dict, fallback: str) -> str:
         return fallback
 
 
+def _metropt_paste_ask_response(raw: str, sensor_row: dict[str, Any]):
+    """Pasted sensor readings: answer before schedule/route heuristics; crew-focused fallback when Gemini is off."""
+    try:
+        from metropt3 import (
+            metropt3_chat_context,
+            metropt3_paste_intro_text,
+            metropt3_paste_operator_fallback,
+            predict_from_row,
+        )
+
+        pred = predict_from_row(sensor_row)
+        ctx = metropt3_chat_context()
+        ctx["pasted_readings"] = sensor_row
+        ctx["pasted_prediction"] = pred
+        fb = (
+            metropt3_paste_intro_text(sensor_row, pred)
+            + "\n\n"
+            + metropt3_paste_operator_fallback(ctx, pred)
+        )
+        label = (
+            "Sanitation operator readout: The user pasted equipment sensor values. "
+            "Reply in 3–5 short sentences for a crew member or driver: (1) OK vs needs attention in plain words, "
+            "(2) the failure % in everyday language, (3) one realistic next step if this were live fleet data, "
+            "(4) clear disclaimer: practice demo, not DSNY systems. Do not discuss borough tonnage or pickup days."
+        )
+        return jsonify({"answer": gemini_answer(raw, label, ctx, fb)})
+    except ImportError as e:
+        return jsonify(
+            {
+                "answer": (
+                    "Equipment readout needs the MetroPT-3 stack installed "
+                    f"(numpy, pandas, scikit-learn). {e}"
+                ),
+            }
+        )
+    except Exception as e:
+        return jsonify({"answer": f"Could not load MetroPT-3 model stats: {e}"})
+
+
 def wants_metropt3_question(q: str) -> bool:
     """Truck / equipment predictive maintenance (MetroPT-3 module), not borough tonnage."""
     if "metropt" in q or "metro pt" in q:
@@ -700,6 +739,12 @@ def api_route_optimize():
             return v.lower() in ("1", "true", "yes")
         return bool(v)
 
+    use_district_priority = _bool_opt("use_district_priority")
+    try:
+        dps = float(payload.get("district_priority_strength", 0.45) or 0.45)
+    except (TypeError, ValueError):
+        dps = 0.45
+
     try:
         out = optimize_route_stops(
             stops,
@@ -712,6 +757,8 @@ def api_route_optimize():
             avoid_tolls=_bool_opt("avoid_tolls"),
             avoid_highways=_bool_opt("avoid_highways"),
             avoid_ferries=_bool_opt("avoid_ferries"),
+            use_district_priority=use_district_priority,
+            district_priority_strength=dps,
         )
         return jsonify(out)
     except ValueError as e:
@@ -809,6 +856,9 @@ def ask():
     except ImportError:
         pass
 
+    if sensor_paste_row is not None:
+        return _metropt_paste_ask_response(raw, sensor_paste_row)
+
     fm = re.fullmatch(r"\d{5,8}", raw.strip())
     sm = re.search(r"\b(\d{5,8})\b", raw)
     pid = (fm.group(0) if fm else (sm.group(1) if sm else None))
@@ -865,32 +915,9 @@ def ask():
             }
         )
 
-    if wants_metropt3_question(q) or sensor_paste_row is not None:
+    if wants_metropt3_question(q):
         try:
-            from metropt3 import (
-                metropt3_chat_context,
-                metropt3_fallback_answer_text,
-                metropt3_for_ask,
-                metropt3_paste_intro_text,
-                predict_from_row,
-            )
-
-            if sensor_paste_row is not None:
-                pred = predict_from_row(sensor_paste_row)
-                ctx = metropt3_chat_context()
-                ctx["pasted_readings"] = sensor_paste_row
-                ctx["pasted_prediction"] = pred
-                fb = (
-                    metropt3_paste_intro_text(sensor_paste_row, pred)
-                    + "\n\n"
-                    + metropt3_fallback_answer_text(ctx)
-                )
-                label = (
-                    "metropt3_predictive_maintenance: The user pasted MetroPT-style sensor readings. "
-                    "Interpret pasted_prediction (failure %, class_label, contributions) and relate to svm_model. "
-                    "Synthetic demo—not live DSNY telemetry. Short answer."
-                )
-                return jsonify({"answer": gemini_answer(raw, label, ctx, fb)})
+            from metropt3 import metropt3_for_ask
 
             ctx, fb = metropt3_for_ask()
             label = (

@@ -10,6 +10,9 @@ Google (when GOOGLE_MAPS_API_KEY + use_google_traffic):
 OSRM / Haversine fallbacks when Google is off or errors.
 
 NYC DOT designated truck network is not fully encoded in Google; use truck_aware for waypoint hints + links.
+
+Optional district priority (use_district_priority): biases nearest-neighbor toward community districts with
+higher published garbage tons (DSNY ebb7-mvp5, latest month in pull) when each stop includes borough + community_district.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -26,6 +30,171 @@ import requests
 OSRM_BASE = "https://router.project-osrm.org"
 MAX_STOPS = 25
 FALLBACK_KMH = 22.0
+
+# DSNY Monthly Tonnage (ebb7-mvp5) — community-district garbage for route priority
+TONNAGE_DATASET_ID = os.environ.get("NYC_SODA_DATASET", "ebb7-mvp5").strip() or "ebb7-mvp5"
+
+
+def _garbage_tons_field() -> str:
+    return os.environ.get("NYC_SODA_GARBAGE_TONS_FIELD", "").strip() or bytes.fromhex(
+        "726566757365746f6e73636f6c6c6563746564"
+    ).decode("ascii")
+
+
+BOROUGH_ALIASES = {
+    "bronx": "BRONX",
+    "brooklyn": "BROOKLYN",
+    "manhattan": "MANHATTAN",
+    "queens": "QUEENS",
+    "staten island": "STATEN ISLAND",
+    "staten": "STATEN ISLAND",
+}
+
+
+def normalize_borough_name(s: object) -> Optional[str]:
+    """Match NYC SODA borough labels (uppercase)."""
+    if s is None:
+        return None
+    t = str(s).strip().lower()
+    if not t:
+        return None
+    if t in BOROUGH_ALIASES:
+        return BOROUGH_ALIASES[t]
+    u = str(s).strip().upper()
+    if u in ("BRONX", "BROOKLYN", "MANHATTAN", "QUEENS", "STATEN ISLAND"):
+        return u
+    return None
+
+
+def _parse_dsny_month_key(v: object) -> tuple[int, int]:
+    """Sort key for month strings like '2026 / 02' or '2026-02'."""
+    s = str(v or "").strip()
+    m = re.match(r"^(\d{4})\s*/\s*(\d{1,2})\s*$", s)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = re.match(r"^(\d{4})-(\d{2})$", s)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return 0, 0
+
+
+def fetch_latest_month_district_garbage_tons() -> tuple[dict[str, float], Optional[str], Optional[str]]:
+    """
+    Sum garbage tons per borough + community district for the latest month in the ordered pull.
+    Keys: 'BROOKLYN|4' (uppercase borough, integer CD).
+    Returns (tons_by_key, latest_month_label, error_message).
+    """
+    if TONNAGE_DATASET_ID != "ebb7-mvp5":
+        return {}, None, "district priority needs NYC_SODA_DATASET=ebb7-mvp5 (tonnage)"
+
+    tok = os.environ.get("SOCRATA_APP_TOKEN", "").strip()
+    limit = min(int(os.environ.get("NYC_SODA_LIMIT", "8000")), 50000)
+    params: dict[str, Any] = {"$limit": str(limit)}
+    if tok:
+        params["$$app_token"] = tok
+    url = f"https://data.cityofnewyork.us/resource/{TONNAGE_DATASET_ID}.json"
+    try:
+        r = requests.get(url, params=params, timeout=90)
+        r.raise_for_status()
+        data = r.json()
+    except (requests.RequestException, ValueError) as e:
+        return {}, None, str(e)
+    if isinstance(data, dict) and data.get("error"):
+        return {}, None, str(data.get("error"))
+    if not isinstance(data, list) or not data:
+        return {}, None, "empty SODA response"
+
+    gc = _garbage_tons_field()
+    by_month: dict[str, list[dict[str, Any]]] = {}
+    for row in data:
+        r = {str(k).lower(): v for k, v in row.items()}
+        m = r.get("month")
+        if not m:
+            continue
+        by_month.setdefault(str(m), []).append(r)
+
+    if not by_month:
+        return {}, None, "no month field in tonnage rows"
+
+    latest_label = max(by_month.keys(), key=lambda x: _parse_dsny_month_key(x))
+    rows = by_month[latest_label]
+    out: dict[str, float] = {}
+    for r in rows:
+        b = normalize_borough_name(r.get("borough"))
+        if not b:
+            continue
+        cd_raw = r.get("communitydistrict") if r.get("communitydistrict") is not None else r.get("community_district")
+        try:
+            cd = int(float(cd_raw))
+        except (TypeError, ValueError):
+            continue
+        try:
+            tons = float(r.get(gc) or 0)
+        except (TypeError, ValueError):
+            tons = 0.0
+        key = f"{b}|{cd}"
+        out[key] = out.get(key, 0.0) + tons
+
+    return out, latest_label, None
+
+
+def stop_district_key(stop: dict[str, Any]) -> Optional[str]:
+    """SODA-style key if borough + community district are present."""
+    b = normalize_borough_name(stop.get("borough"))
+    if not b:
+        return None
+    cd = stop.get("community_district", stop.get("communitydistrict"))
+    if cd is None or str(cd).strip() == "":
+        return None
+    try:
+        cd_i = int(float(cd))
+    except (TypeError, ValueError):
+        return None
+    return f"{b}|{cd_i}"
+
+
+def destination_priority_multipliers(
+    stops: list[dict[str, Any]],
+    tons_by_district: dict[str, float],
+    *,
+    strength: float,
+) -> tuple[list[float], dict[str, Any]]:
+    """
+    Per-stop multipliers >= 1.0: higher garbage-tonnage districts get larger multipliers
+    (effective travel cost is divided by these in weighted NN — visit sooner).
+    """
+    meta: dict[str, Any] = {"stops_with_district": 0, "keys_resolved": []}
+    keys = [stop_district_key(s) for s in stops]
+    meta["stops_with_district"] = sum(1 for k in keys if k is not None)
+    tons_for_stops: list[Optional[float]] = []
+    for k in keys:
+        if k and k in tons_by_district:
+            tons_for_stops.append(tons_by_district[k])
+            meta["keys_resolved"].append({"key": k, "garbage_tons_latest_month": round(tons_by_district[k], 2)})
+        else:
+            tons_for_stops.append(None)
+            if k:
+                meta.setdefault("keys_missing_tonnage", []).append(k)
+
+    present = [t for t in tons_for_stops if t is not None]
+    if not present:
+        return [1.0] * len(stops), meta
+
+    lo, hi = min(present), max(present)
+    mult: list[float] = []
+    st = max(0.0, min(1.0, float(strength)))
+    for t in tons_for_stops:
+        if t is None:
+            mult.append(1.0)
+            continue
+        if hi <= lo + 1e-9:
+            norm = 1.0
+        else:
+            norm = (t - lo) / (hi - lo)
+        # 1.0 (low tonnage) .. 1.0 + st (high tonnage)
+        mult.append(1.0 + st * norm)
+    meta["priority_strength_applied"] = st
+    return mult, meta
 
 GOOGLE_DISTANCE_MATRIX = "https://maps.googleapis.com/maps/api/distancematrix/json"
 GOOGLE_DIRECTIONS = "https://maps.googleapis.com/maps/api/directions/json"
@@ -80,7 +249,17 @@ def _validate_stop(s: dict[str, Any], idx: int) -> dict[str, Any]:
     if not (-90 <= lat <= 90 and -180 <= lng <= 180):
         raise ValueError(f"Stop {idx}: lat/lng out of range")
     label = (s.get("label") or s.get("name") or f"Stop {idx + 1}") or f"Stop {idx + 1}"
-    return {"lat": lat, "lng": lng, "label": str(label)}
+    out: dict[str, Any] = {"lat": lat, "lng": lng, "label": str(label)}
+    b = s.get("borough")
+    if b is not None and str(b).strip():
+        out["borough"] = str(b).strip()
+    cd = s.get("community_district", s.get("communitydistrict"))
+    if cd is not None and str(cd).strip() != "":
+        try:
+            out["community_district"] = int(float(cd))
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -420,17 +599,38 @@ def google_directions_traffic_totals(
     return dur_s, dist_m
 
 
-def nearest_neighbor_order(matrix: list[list[float]], start: int = 0) -> list[int]:
+def nearest_neighbor_order(
+    matrix: list[list[float]],
+    start: int = 0,
+    *,
+    dest_priority_multipliers: Optional[list[float]] = None,
+) -> list[int]:
+    """
+    Greedy TSP-style order on travel-time matrix.
+    If dest_priority_multipliers[j] > 1, stop j is favored (effective cost = time / multiplier).
+    """
     n = len(matrix)
     if n == 0:
         return []
     if start < 0 or start >= n:
         raise ValueError("start_index out of range")
+    if dest_priority_multipliers is not None and len(dest_priority_multipliers) != n:
+        raise ValueError("dest_priority_multipliers length must match number of stops")
     unvisited = set(range(n)) - {start}
     order = [start]
+
+    def edge_cost(cur: int, j: int) -> float:
+        base = matrix[cur][j]
+        if dest_priority_multipliers is None:
+            return base
+        m = dest_priority_multipliers[j]
+        if m <= 1e-12:
+            m = 1e-12
+        return base / m
+
     while unvisited:
         cur = order[-1]
-        nxt = min(unvisited, key=lambda j: matrix[cur][j])
+        nxt = min(unvisited, key=lambda j: edge_cost(cur, j))
         order.append(nxt)
         unvisited.remove(nxt)
     return order
@@ -453,6 +653,8 @@ def optimize_route_stops(
     avoid_tolls: bool = False,
     avoid_highways: bool = False,
     avoid_ferries: bool = False,
+    use_district_priority: bool = False,
+    district_priority_strength: float = 0.45,
 ) -> dict[str, Any]:
     if not raw_stops:
         raise ValueError("Provide at least one stop")
@@ -479,6 +681,7 @@ def optimize_route_stops(
             "google_traffic_engine": None,
             "truck_profile_applied": truck_aware,
             "disclaimer": "Only one stop; nothing to reorder.",
+            "district_priority": {"enabled": False, "skipped": "single stop"},
         }
         if truck_aware:
             out["nyc_truck_resources"] = NYC_TRUCK_RESOURCES
@@ -523,7 +726,35 @@ def optimize_route_stops(
             else:
                 matrix_kind = matrix_kind + "_osrm_failed"
 
-    order = nearest_neighbor_order(matrix, start_index)
+    priority_block: dict[str, Any] = {"enabled": bool(use_district_priority)}
+    dest_mult: Optional[list[float]] = None
+    if use_district_priority:
+        any_cd = any(stop_district_key(s) for s in stops)
+        if any_cd:
+            tons_map, month_lbl, err = fetch_latest_month_district_garbage_tons()
+            priority_block["tonnage_month"] = month_lbl
+            priority_block["dataset"] = TONNAGE_DATASET_ID
+            if err:
+                priority_block["error"] = err
+            elif not tons_map:
+                priority_block["error"] = "no district tonnage rows aggregated"
+            else:
+                strength = max(0.0, min(1.0, float(district_priority_strength)))
+                dest_mult, meta = destination_priority_multipliers(stops, tons_map, strength=strength)
+                priority_block.update(meta)
+                priority_block["strength"] = strength
+                priority_block["note"] = (
+                    "Higher community-district garbage tons (latest month in pull) favor earlier visits "
+                    "when travel times are similar."
+                )
+        else:
+            priority_block["skipped"] = "no stop has both borough and community_district"
+
+    order = nearest_neighbor_order(
+        matrix,
+        start_index,
+        dest_priority_multipliers=dest_mult,
+    )
     ordered = [stops[i] for i in order]
 
     edge_total = sum(matrix[order[i]][order[i + 1]] for i in range(len(order) - 1))
@@ -582,6 +813,13 @@ def optimize_route_stops(
         disclaimer_parts.append(
             "Route modifiers (avoid tolls/highways/ferries) change paths—use only when appropriate for your vehicle."
         )
+    if use_district_priority and priority_block.get("note") and not priority_block.get("error") and not priority_block.get(
+        "skipped"
+    ):
+        disclaimer_parts.append(
+            "District priority uses latest-month garbage tons per community district from NYC Open Data (ebb7-mvp5); "
+            "it biases stop order—it is not a DSNY dispatch rule."
+        )
 
     result: dict[str, Any] = {
         "ordered_stops": ordered,
@@ -596,6 +834,7 @@ def optimize_route_stops(
         "google_traffic_engine": google_engine,
         "truck_profile_applied": truck_aware,
         "disclaimer": " ".join(disclaimer_parts),
+        "district_priority": priority_block,
     }
     if truck_aware:
         result["nyc_truck_resources"] = NYC_TRUCK_RESOURCES
