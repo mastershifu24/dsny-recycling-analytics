@@ -676,7 +676,10 @@ def api_route_optimize():
     gkey = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
     if use_google_traffic and not gkey:
         return jsonify(
-            {"error": "Live traffic requires GOOGLE_MAPS_API_KEY in .env (enable Distance Matrix + Directions APIs)."}
+            {
+                "error": "Live traffic requires GOOGLE_MAPS_API_KEY in .env. Enable Routes API + "
+                "(fallback) Distance Matrix + Directions in Google Cloud."
+            }
         ), 400
     traffic_model = (payload.get("traffic_model") or "best_guess").strip().lower()
     if traffic_model not in ("best_guess", "pessimistic", "optimistic"):
@@ -684,6 +687,13 @@ def api_route_optimize():
     truck_aware = payload.get("truck_aware", False)
     if isinstance(truck_aware, str):
         truck_aware = truck_aware.lower() in ("1", "true", "yes")
+
+    def _bool_opt(key: str) -> bool:
+        v = payload.get(key, False)
+        if isinstance(v, str):
+            return v.lower() in ("1", "true", "yes")
+        return bool(v)
+
     try:
         out = optimize_route_stops(
             stops,
@@ -693,6 +703,9 @@ def api_route_optimize():
             use_google_traffic=bool(use_google_traffic),
             traffic_model=traffic_model,
             truck_aware=bool(truck_aware),
+            avoid_tolls=_bool_opt("avoid_tolls"),
+            avoid_highways=_bool_opt("avoid_highways"),
+            avoid_ferries=_bool_opt("avoid_ferries"),
         )
         return jsonify(out)
     except ValueError as e:

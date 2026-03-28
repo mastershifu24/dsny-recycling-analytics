@@ -18,7 +18,7 @@
 | **Pillow** | Image decode for `/analyze-image` |
 | **Cloud Run** | Container deploy from repo root (`Dockerfile`) |
 | **MetroPT-3** (optional) | **`/metropt3`** — synthetic train-air-unit demo: MANOVA + RBF SVM via **`GET /api/metropt3/diagnostics`**, **`POST /api/metropt3/predict`**, **`POST /api/metropt3/interpret`** (Gemini uses same `GEMINI_API_KEY` as the DSNY app). Requires `numpy`, `pandas`, `scikit-learn`, `scipy`, `statsmodels`. |
-| **Routing** | **`/routing`** — DOT/CSCL/DSNY links; **`POST /api/route/optimize`** — nearest-neighbor stop order: optional **Google** `duration_in_traffic` (needs `GOOGLE_MAPS_API_KEY`), else **OSRM**, else Haversine. NYC DOT truck network not encoded in those APIs—use `truck_aware` for official links. |
+| **Routing** | **`/routing`** — DOT/CSCL/DSNY links; **`POST /api/route/optimize`** — nearest-neighbor order: **Google Routes API v2** matrix (`TRAFFIC_AWARE_OPTIMAL` when n×n≤100) + **computeRoutes** totals, then legacy Distance Matrix/Directions, else OSRM/Haversine. `truck_aware`, `avoid_*` — see API. |
 
 **Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone folder name can differ; code paths are relative.
 

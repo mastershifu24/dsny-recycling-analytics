@@ -35,7 +35,13 @@
   {"lat": 40.7484, "lng": -73.9857, "label": "MSG"},
   {"lat": 40.7614, "lng": -73.9776, "label": "Rock Center"}
 ]</textarea>
-    <p class="muted"><label><input type="checkbox" id="useOsrm" checked /> Use OSRM road network (uncheck = Haversine-only)</label></p>
+    <p class="muted"><label><input type="checkbox" id="useGoogleTraffic" /> Google live traffic (Routes API v2 + legacy fallback)</label></p>
+    <p class="muted"><label>Traffic model <select id="trafficModel"><option value="best_guess">best_guess</option><option value="pessimistic">pessimistic</option><option value="optimistic">optimistic</option></select></label></p>
+    <p class="muted"><label><input type="checkbox" id="truckAware" /> Truck-aware (vehicleStopover + NYC DOT links)</label></p>
+    <p class="muted">Google modifiers: <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidTolls" /> avoid tolls</label>
+      <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidHighways" /> avoid highways</label>
+      <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidFerries" /> avoid ferries</label></p>
+    <p class="muted"><label><input type="checkbox" id="useOsrm" checked /> Fall back to OSRM if Google fails (or when traffic off)</label></p>
     <button type="button" id="btnOpt">Optimize order</button>
     <div id="out" aria-live="polite"></div>
     <p id="mapLink" class="muted"></p>
@@ -94,6 +100,9 @@
             use_google_traffic: document.getElementById('useGoogleTraffic').checked,
             traffic_model: document.getElementById('trafficModel').value,
             truck_aware: document.getElementById('truckAware').checked,
+            avoid_tolls: document.getElementById('avoidTolls').checked,
+            avoid_highways: document.getElementById('avoidHighways').checked,
+            avoid_ferries: document.getElementById('avoidFerries').checked,
           }),
         });
         const data = await res.json();
@@ -103,7 +112,9 @@
         }
         let lines = [
           'Matrix: ' + data.matrix_kind,
+          data.google_traffic_engine ? 'Google engine: ' + data.google_traffic_engine : '',
           'Live traffic: ' + (data.live_traffic ? 'yes (' + data.traffic_model + ')' : 'no'),
+          data.truck_profile_applied ? 'Truck profile (waypoints): on' : '',
           'Order: ' + data.order_indices.join(' → '),
           'Edge sum (sec): ' + data.total_edge_duration_sec,
           data.route_duration_sec != null ? 'Route total (sec): ' + data.route_duration_sec : '',
