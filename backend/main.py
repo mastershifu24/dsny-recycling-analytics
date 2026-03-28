@@ -656,7 +656,7 @@ def routing_links_page():
 
 @app.route("/api/route/optimize", methods=["POST"])
 def api_route_optimize():
-    """Order stops by nearest-neighbor on OSRM driving durations (fallback: Haversine time)."""
+    """Order stops by nearest-neighbor (Google traffic matrix, OSRM, or Haversine)."""
     try:
         from route_optimize import optimize_route_stops
     except ImportError as e:
@@ -670,8 +670,30 @@ def api_route_optimize():
     use_osrm = payload.get("use_osrm", True)
     if isinstance(use_osrm, str):
         use_osrm = use_osrm.lower() in ("1", "true", "yes")
+    use_google_traffic = payload.get("use_google_traffic", False)
+    if isinstance(use_google_traffic, str):
+        use_google_traffic = use_google_traffic.lower() in ("1", "true", "yes")
+    gkey = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
+    if use_google_traffic and not gkey:
+        return jsonify(
+            {"error": "Live traffic requires GOOGLE_MAPS_API_KEY in .env (enable Distance Matrix + Directions APIs)."}
+        ), 400
+    traffic_model = (payload.get("traffic_model") or "best_guess").strip().lower()
+    if traffic_model not in ("best_guess", "pessimistic", "optimistic"):
+        traffic_model = "best_guess"
+    truck_aware = payload.get("truck_aware", False)
+    if isinstance(truck_aware, str):
+        truck_aware = truck_aware.lower() in ("1", "true", "yes")
     try:
-        out = optimize_route_stops(stops, start_index=start, use_osrm=bool(use_osrm))
+        out = optimize_route_stops(
+            stops,
+            start_index=start,
+            use_osrm=bool(use_osrm),
+            google_maps_api_key=gkey or None,
+            use_google_traffic=bool(use_google_traffic),
+            traffic_model=traffic_model,
+            truck_aware=bool(truck_aware),
+        )
         return jsonify(out)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

@@ -212,8 +212,9 @@
         For <strong>pickup day</strong>, we point you to the <strong>official address lookup</strong> (you need a real street address).
       </p>
       <div class="callout" role="note">
-        <strong>Not included:</strong> truck routes, turn-by-turn, or “best route” rankings in the tonnage data.
-        <a href="/routing">Where to find DOT truck maps &amp; related links</a>
+        <strong>Routes:</strong> borough tonnage data does not include truck paths. A separate
+        <a href="/routing#demo">stop-order helper</a> uses road-network driving times (OSRM)—not live traffic or DSNY dispatch.
+        <a href="/routing">DOT maps &amp; links</a>
       </div>
     </section>
 
@@ -263,6 +264,12 @@
     <p id="transcript" aria-live="polite"></p>
     <div class="out-label">Answer</div>
     <div id="result" role="status" aria-live="polite"></div>
+    <p class="hint" style="margin-top:0.6rem">
+      <button type="button" class="secondary" id="speakBtn">Read answer aloud</button>
+      <button type="button" class="secondary" id="stopSpeakBtn">Stop</button>
+      <label style="margin-left:0.35rem"><input type="checkbox" id="autoRead" /> Auto-read answers</label>
+    </p>
+    <p class="hint" style="margin-top:0">Uses your browser’s voice (Web Speech API), not Gemini audio.</p>
   </div>
   <script src="/script.js"></script>
 </body>

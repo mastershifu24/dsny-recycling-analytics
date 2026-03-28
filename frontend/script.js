@@ -4,10 +4,49 @@
   const textQ = document.getElementById("textQ");
   const transcriptP = document.getElementById("transcript");
   const resultP = document.getElementById("result");
+  const speakBtn = document.getElementById("speakBtn");
+  const stopSpeakBtn = document.getElementById("stopSpeakBtn");
+  const autoReadEl = document.getElementById("autoRead");
+
+  function maybeAutoRead(text) {
+    if (!autoReadEl || !autoReadEl.checked || !window.speechSynthesis) return;
+    const t = (text || "").trim();
+    if (!t) return;
+    if (/^(Thinking|Listening|Analyzing photo)/.test(t)) return;
+    speakAnswer();
+  }
 
   function setResult(text, placeholder) {
     resultP.textContent = text;
     resultP.classList.toggle("is-placeholder", !!placeholder);
+    if (!placeholder) maybeAutoRead(text);
+  }
+
+  function speakAnswer() {
+    if (!window.speechSynthesis) return;
+    const txt = (resultP.textContent || "").trim();
+    if (!txt || resultP.classList.contains("is-placeholder")) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(txt);
+    utt.rate = 0.93;
+    utt.lang = "en-US";
+    const voices = window.speechSynthesis.getVoices();
+    const best =
+      voices.find(
+        (v) => v.lang === "en-US" && (v.name.includes("Neural") || v.name.includes("Google"))
+      ) || voices.find((v) => v.lang && v.lang.startsWith("en"));
+    if (best) utt.voice = best;
+    window.speechSynthesis.speak(utt);
+  }
+
+  if (speakBtn) speakBtn.addEventListener("click", speakAnswer);
+  if (stopSpeakBtn)
+    stopSpeakBtn.addEventListener("click", () => window.speechSynthesis && window.speechSynthesis.cancel());
+  if (window.speechSynthesis) {
+    window.speechSynthesis.addEventListener("voiceschanged", () => window.speechSynthesis.getVoices());
+  } else if (speakBtn) {
+    speakBtn.disabled = true;
+    speakBtn.title = "Speech synthesis not available in this browser.";
   }
 
   setResult("Answers will appear here after you ask.", true);
@@ -49,28 +88,27 @@
   if (!SpeechRecognition) {
     startBtn.disabled = true;
     startBtn.title = "Web Speech API not available in this browser.";
-    return;
+  } else {
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    startBtn.addEventListener("click", () => {
+      setResult("Listening…", false);
+      recognition.start();
+    });
+
+    recognition.onerror = (ev) => {
+      setResult("Speech error: " + (ev.error || "unknown"), false);
+    };
+
+    recognition.onresult = (event) => {
+      const question = event.results[0][0].transcript;
+      textQ.value = question;
+      askBackend(question);
+    };
   }
-
-  const recognition = new SpeechRecognition();
-  recognition.lang = "en-US";
-  recognition.continuous = false;
-  recognition.interimResults = false;
-
-  startBtn.addEventListener("click", () => {
-    setResult("Listening…", false);
-    recognition.start();
-  });
-
-  recognition.onerror = (ev) => {
-    setResult("Speech error: " + (ev.error || "unknown"), false);
-  };
-
-  recognition.onresult = (event) => {
-    const question = event.results[0][0].transcript;
-    textQ.value = question;
-    askBackend(question);
-  };
 
   const photoBtn = document.getElementById("photoBtn");
   const photoInput = document.getElementById("photoInput");

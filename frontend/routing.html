@@ -28,7 +28,7 @@
 
   <div class="box" id="demo">
     <strong>Basic stop optimizer (built-in)</strong>
-    <p class="muted">Paste JSON: an array of stops with <code>lat</code>, <code>lng</code>, optional <code>label</code>. First stop is the default start. Uses nearest-neighbor on OSRM driving durations (falls back to straight-line time if OSRM is down).</p>
+    <p class="muted">Paste JSON: <code>lat</code>, <code>lng</code>, optional <code>label</code>. Nearest-neighbor order. Optional: <strong>Google live traffic</strong> (needs <code>GOOGLE_MAPS_API_KEY</code> on the server). NYC DOT truck rules are not baked into Google—use <strong>Truck-aware</strong> for links + disclaimer.</p>
     <label for="jsonIn">Stops JSON</label>
     <textarea id="jsonIn" spellcheck="false">[
   {"lat": 40.7589, "lng": -73.9851, "label": "Times Sq"},
@@ -64,7 +64,7 @@
     </ul>
   </div>
 
-  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> with body <code>{"stops":[...], "start_index":0, "use_osrm":true}</code></p>
+  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> — <code>use_google_traffic</code>, <code>traffic_model</code>, <code>truck_aware</code>, <code>use_osrm</code>.</p>
 
   <script>
     document.getElementById('btnOpt').addEventListener('click', async () => {
@@ -91,6 +91,9 @@
             stops,
             start_index: 0,
             use_osrm: document.getElementById('useOsrm').checked,
+            use_google_traffic: document.getElementById('useGoogleTraffic').checked,
+            traffic_model: document.getElementById('trafficModel').value,
+            truck_aware: document.getElementById('truckAware').checked,
           }),
         });
         const data = await res.json();
@@ -98,8 +101,9 @@
           out.textContent = data.error || res.statusText;
           return;
         }
-        const lines = [
+        let lines = [
           'Matrix: ' + data.matrix_kind,
+          'Live traffic: ' + (data.live_traffic ? 'yes (' + data.traffic_model + ')' : 'no'),
           'Order: ' + data.order_indices.join(' → '),
           'Edge sum (sec): ' + data.total_edge_duration_sec,
           data.route_duration_sec != null ? 'Route total (sec): ' + data.route_duration_sec : '',
@@ -110,6 +114,12 @@
           '',
           data.disclaimer,
         ].filter(Boolean);
+        if (data.nyc_truck_resources && data.nyc_truck_resources.length) {
+          lines.push('', 'NYC truck resources (manual compliance):');
+          data.nyc_truck_resources.forEach(function (r) {
+            lines.push('  - ' + r.label + '\n    ' + r.url);
+          });
+        }
         out.textContent = lines.join('\n');
         const a = document.createElement('a');
         a.href = data.google_maps_url;
