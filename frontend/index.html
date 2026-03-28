@@ -42,6 +42,7 @@
     }
     button:active { background: #eee; }
     label { display: block; margin-top: 1rem; font-weight: 700; font-size: 1rem; }
+    #photoQ { min-height: 3rem; }
     textarea {
       width: 100%;
       max-width: 100%;
@@ -86,6 +87,16 @@
 
   <div class="row">
     <button type="button" id="startBtn">Speak question</button>
+  </div>
+
+  <p><strong>Photo check (demo):</strong> point camera at a pile—needs <code>GEMINI_API_KEY</code> on the server. Citation output is a <strong>stub</strong>, not a real ticket.</p>
+  <div class="row">
+    <input type="file" id="photoInput" accept="image/*" />
+  </div>
+  <label for="photoQ">Optional note with the photo</label>
+  <textarea id="photoQ" placeholder="e.g. Gemini, check this pile for recycling contamination."></textarea>
+  <div class="row">
+    <button type="button" id="photoBtn">Analyze photo</button>
   </div>
 
   <label for="textQ">Type a question</label>

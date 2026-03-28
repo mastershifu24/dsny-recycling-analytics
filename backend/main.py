@@ -1,13 +1,16 @@
 """
 DSNY Recycling Analytics — Flask backend.
-Voice/text for crews and drivers over NYC Open Data: tonnage (ebb7-mvp5), optional schedule sample (p7k6-2pm8).
+Voice/text + NYC Open Data (tonnage ebb7-mvp5, schedule sample p7k6-2pm8).
+Optional multimodal: POST /analyze-image (Gemini + PIL) with demo citation tool—not real enforcement.
 Env: NYC_SODA_DATASET, NYC_SCHEDULE_DATASET, SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import os
+import random
 import re
 from collections import defaultdict
 from datetime import datetime
@@ -41,8 +44,125 @@ FRONTEND_DIR = os.path.join(BACKEND_DIR, "..", "frontend")
 
 app = Flask(__name__)
 CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB for photo uploads
 
 SODA_TIMEOUT = 90
+
+# Illustrative district context for multimodal demo (not live SODA—replace with fetched stats later)
+DSNY_RECYCLING_CONTEXT: dict[str, dict[str, Any]] = {
+    "Manhattan_District_3": {
+        "PaperTons_Efficiency": "High",
+        "Contamination_Risk": "Low",
+        "Prior_Violations": 12,
+    },
+    "Brooklyn_District_4": {
+        "PaperTons_Efficiency": "Poor",
+        "Contamination_Risk": "High",
+        "Prior_Violations": 450,
+    },
+    "Queens_District_7": {
+        "PaperTons_Efficiency": "Medium",
+        "Contamination_Risk": "Medium",
+        "Prior_Violations": 89,
+    },
+}
+
+MULTIMODAL_DEMO_DISCLAIMER = (
+    "Demo only: district scores are illustrative samples; the citation tool does not issue real fines or tickets."
+)
+
+
+def issue_dsny_citation(district: str, contamination_type: str, address: str) -> dict[str, Any]:
+    """Gemini tool (demo): draft incident record—not real DSNY enforcement."""
+
+    ticket_id = f"DEMO-TKT-{random.randint(1000, 9999)}"
+    return {
+        "status": "demo_stub_only",
+        "ticket_number": ticket_id,
+        "district": district,
+        "contamination_type": contamination_type,
+        "address": address,
+        "note": "Not a real citation—hackathon demo for supervisor review workflows.",
+    }
+
+
+def _function_call_args(fc: Any) -> dict[str, Any]:
+    try:
+        from google.protobuf.json_format import MessageToDict
+
+        if fc.args:
+            return MessageToDict(fc.args)
+    except Exception:
+        pass
+    try:
+        return {k: fc.args[k] for k in fc.args}
+    except Exception:
+        return {}
+
+
+def run_multimodal_analysis(image: Any, question: str) -> dict[str, Any]:
+    """Image (PIL) + text → Gemini with optional issue_dsny_citation tool."""
+    import google.generativeai as genai
+    from PIL import Image as PILImage
+
+    if not isinstance(image, PILImage.Image):
+        raise TypeError("Expected PIL Image")
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"].strip())
+    ctx = json.dumps(DSNY_RECYCLING_CONTEXT)
+    system_instruction = (
+        "You are a DSNY crew assistant (demo). "
+        f"Illustrative district context (sample, not live open data): {ctx}. "
+        "If you see clear recycling contamination (e.g. recyclables in trash bags), "
+        "call issue_dsny_citation(district, contamination_type, address). "
+        "Prefer district keys like Brooklyn_District_4 when they match the scene. "
+        "The tool only creates a DEMO stub—not a real fine. If unsure, describe only and do not call the tool."
+    )
+    model = genai.GenerativeModel(
+        model_name=os.environ.get("GEMINI_MODEL", "gemini-1.5-flash"),
+        tools=[issue_dsny_citation],
+        system_instruction=system_instruction,
+    )
+    response = model.generate_content(
+        [image, question],
+        generation_config=genai.GenerationConfig(temperature=0.3),
+    )
+    if not response.candidates:
+        return {
+            "answer": "No model response (safety filter or empty).",
+            "tool_results": [],
+            "disclaimer": MULTIMODAL_DEMO_DISCLAIMER,
+        }
+    parts = response.candidates[0].content.parts
+    text_bits: list[str] = []
+    tool_results: list[dict[str, Any]] = []
+    for part in parts:
+        if getattr(part, "text", None):
+            text_bits.append(part.text)
+        fc = getattr(part, "function_call", None)
+        if fc and fc.name == "issue_dsny_citation":
+            args = _function_call_args(fc)
+            tool_results.append(
+                issue_dsny_citation(
+                    str(args.get("district", "unknown")),
+                    str(args.get("contamination_type", "unknown")),
+                    str(args.get("address", "unknown")),
+                )
+            )
+    answer = "\n\n".join(text_bits).strip()
+    if tool_results:
+        answer += ("\n\n" if answer else "") + "[Demo draft] " + json.dumps(tool_results, indent=2)
+    if not answer:
+        answer = "Model returned no text; check tool_results if present."
+    return {
+        "answer": answer,
+        "tool_results": tool_results,
+        "disclaimer": MULTIMODAL_DEMO_DISCLAIMER,
+    }
+
+
 ROW_LIMIT = min(int(os.environ.get("NYC_SODA_LIMIT", "8000")), 50000)
 
 BOROUGH_NAMES = {
@@ -493,6 +613,43 @@ def schedule_sample():
             "hint": driver_schedule_answer(""),
         }
     )
+
+
+@app.route("/analyze-image", methods=["POST"])
+def analyze_image():
+    """Multimodal: photo + optional text. Requires GEMINI_API_KEY. Demo citation tool only."""
+    if not gemini_ok():
+        return (
+            jsonify(
+                {
+                    "error": "Set GEMINI_API_KEY for photo analysis.",
+                    "disclaimer": MULTIMODAL_DEMO_DISCLAIMER,
+                }
+            ),
+            503,
+        )
+    if "image" not in request.files:
+        return jsonify({"error": "Missing file field 'image' (multipart/form-data)."}), 400
+    f = request.files["image"]
+    if not f or not f.filename:
+        return jsonify({"error": "Empty upload."}), 400
+    from PIL import Image as PILImage
+
+    data = f.read()
+    try:
+        img = PILImage.open(io.BytesIO(data))
+        img.load()
+    except Exception as e:
+        return jsonify({"error": f"Could not read image: {e}"}), 400
+    question = (request.form.get("question") or "").strip() or (
+        "Check this pile for recycling contamination. If clearly contaminated, call issue_dsny_citation "
+        "with best-guess district, contamination_type, and address."
+    )
+    try:
+        out = run_multimodal_analysis(img, question)
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e), "disclaimer": MULTIMODAL_DEMO_DISCLAIMER}), 500
 
 
 @app.route("/ask", methods=["POST"])

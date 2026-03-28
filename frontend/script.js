@@ -61,4 +61,41 @@
     textQ.value = question;
     askBackend(question);
   };
+
+  const photoBtn = document.getElementById("photoBtn");
+  const photoInput = document.getElementById("photoInput");
+  const photoQ = document.getElementById("photoQ");
+  if (photoBtn && photoInput) {
+    photoBtn.addEventListener("click", async () => {
+      const file = photoInput.files && photoInput.files[0];
+      if (!file) {
+        resultP.textContent = "Choose a photo first.";
+        return;
+      }
+      transcriptP.textContent = "";
+      resultP.textContent = "Analyzing photo…";
+      const fd = new FormData();
+      fd.append("image", file);
+      if (photoQ && photoQ.value.trim()) {
+        fd.append("question", photoQ.value.trim());
+      }
+      try {
+        const res = await fetch("/analyze-image", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data.error) {
+          resultP.textContent =
+            data.error + (data.disclaimer ? "\n\n" + data.disclaimer : "");
+          return;
+        }
+        let out = data.answer || "";
+        if (data.disclaimer) {
+          out += "\n\n" + data.disclaimer;
+        }
+        resultP.textContent = out || "No answer.";
+      } catch (e) {
+        resultP.textContent =
+          "Request failed: " + (e && e.message ? e.message : String(e));
+      }
+    });
+  }
 })();
