@@ -15,6 +15,7 @@
 | **Gemini** (optional) | Text: plain-language answers from pulled JSON. **Multimodal:** `POST /analyze-image` (photo + optional prompt) with tool `issue_dsny_citation`—**demo stub only**, not real fines (`GEMINI_API_KEY` required). |
 | **Pillow** | Image decode for `/analyze-image` |
 | **Cloud Run** | Container deploy from repo root (`Dockerfile`) |
+| **MetroPT-3** (optional) | **`/metropt3`** — synthetic train-air-unit demo: MANOVA + RBF SVM via **`GET /api/metropt3/diagnostics`**, **`POST /api/metropt3/predict`**, **`POST /api/metropt3/interpret`** (Gemini uses same `GEMINI_API_KEY` as the DSNY app). Requires `numpy`, `pandas`, `scikit-learn`, `scipy`, `statsmodels`. |
 
 **Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone folder name can differ; code paths are relative.
 
@@ -38,7 +39,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Open **http://127.0.0.1:5000/**.
+Open **http://127.0.0.1:5000/**. Optional demo: **http://127.0.0.1:5000/metropt3**.
 
 ### Optional: Gemini (local)
 

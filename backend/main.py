@@ -770,5 +770,61 @@ def ask():
     )
 
 
+# --- MetroPT-3 predictive maintenance (MANOVA + SVM API + static dashboard) ---
+@app.route("/metropt3")
+def metropt3_page():
+    return send_from_directory(FRONTEND_DIR, "metropt3.html")
+
+
+@app.route("/api/metropt3/diagnostics", methods=["GET"])
+def metropt3_diagnostics():
+    try:
+        from metropt3 import diagnostics_payload
+
+        return jsonify(diagnostics_payload())
+    except ImportError as e:
+        return jsonify({"error": f"MetroPT-3 dependencies missing: {e}"}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metropt3/predict", methods=["POST"])
+def metropt3_predict():
+    try:
+        from metropt3 import FEATURE_COLS, predict_from_row
+    except ImportError as e:
+        return jsonify({"error": f"MetroPT-3 dependencies missing: {e}"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    row: dict[str, Any] = {}
+    try:
+        for k in FEATURE_COLS:
+            if k not in payload:
+                return jsonify({"error": f"Missing field: {k}", "required": list(FEATURE_COLS)}), 400
+            row[k] = float(payload[k])
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"Invalid numeric value: {e}"}), 400
+    try:
+        return jsonify(predict_from_row(row))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/metropt3/interpret", methods=["POST"])
+def metropt3_interpret():
+    try:
+        from metropt3 import call_gemini_interpret
+    except ImportError as e:
+        return jsonify({"error": f"MetroPT-3 dependencies missing: {e}", "text": ""}), 503
+
+    payload = request.get_json(silent=True) or {}
+    current_input = payload.get("input")
+    prediction = payload.get("prediction")
+    text, err = call_gemini_interpret(current_input, prediction)
+    if err:
+        return jsonify({"error": err, "text": text or ""}), 503
+    return jsonify({"text": text})
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=True)
