@@ -17,7 +17,8 @@
       color: #1a1a1a;
       background: #fafafa;
     }
-    h1 { font-size: 1.35rem; margin-bottom: 0.5rem; }
+    h1 { font-size: 1.35rem; margin-bottom: 0.35rem; }
+    .tag { font-size: 0.95rem; color: #444; margin: 0 0 0.75rem; }
     .lead {
       font-size: 1rem;
       margin: 0 0 1rem;
@@ -68,17 +69,19 @@
 </head>
 <body>
   <h1>DSNY Recycling Analytics</h1>
+  <p class="tag">For sanitation crews &amp; truck drivers · voice or text · NYC open data</p>
   <p class="lead">
-    Ask in <strong>voice</strong> or <strong>text</strong>. <strong>Refuse trends</strong> use monthly city data.
-    <strong>Pickup days</strong> need an address—this app links you to the official DSNY schedule, not your route.
+    <strong>Problem:</strong> Wrong trash in recycling ruins loads—and stopping to write it all up is brutal on a route.
+    <strong>This app:</strong> use <strong>voice or text</strong> to pull <strong>city data</strong> (borough refuse trends, context) without forms.
+    It does <strong>not</strong> replace paperwork for enforcement; it gives fast <strong>facts from open data</strong> and links for pickup-day questions (address-based).
   </p>
   <p><strong>Try asking:</strong></p>
   <ul class="examples">
-    <li>“Bronx refuse trend and month over month”</li>
-    <li>“Pickup schedule” or “when is garbage day in Queens”</li>
+    <li>“Bronx refuse trend month over month”</li>
+    <li>“When is garbage day in Queens” (we link the official schedule—you need an address for your stop)</li>
   </ul>
   <p>
-    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Data: DSNY Monthly Tonnage</a>
+    <a class="source" href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">Data: NYC DSNY Monthly Tonnage (open data)</a>
   </p>
 
   <div class="row">
@@ -86,7 +89,7 @@
   </div>
 
   <label for="textQ">Type a question</label>
-  <textarea id="textQ" placeholder="Example: Bronx refuse tons trend and change from last month."></textarea>
+  <textarea id="textQ" placeholder="Example: Queens refuse tons trend last few months."></textarea>
   <div class="row">
     <button type="button" id="sendBtn">Get answer</button>
   </div>

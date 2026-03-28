@@ -1,16 +1,28 @@
 # DSNY Recycling Analytics
 
-Voice or text → Flask → **[NYC Open Data SODA](https://data.cityofnewyork.us/)** — default **[DSNY Monthly Tonnage `ebb7-mvp5`](https://data.cityofnewyork.us/d/ebb7-mvp5)** ([preview](https://data.cityofnewyork.us/City-Government/DSNY-Monthly-Tonnage-Data/ebb7-mvp5/data_preview)).
+**Flask** app: **voice or text** → **[NYC Open Data (SODA)](https://data.cityofnewyork.us/)**. Built for **sanitation crews and truck drivers** who need **fast context** from published city data—borough refuse trends, schedule pointers—not a replacement for full enforcement paperwork when contamination needs official reporting.
 
-**Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone as `dsny-recycling-analytics` if you like; paths in code are relative.
+### Problem we care about
 
-The backend **sums `refusetonscollected` by `MONTH`**, then **month-over-month change** vs the previous month (same idea as `pandas.Series.shift(1)`). Optional **Gemini** via `GEMINI_API_KEY`.
+**Wrong trash in recycling** ruins loads and **time on route is short** for long forms. This app is a **hands-free first step**: borough-level **refuse / trend** context from open data, plus **honest links** for pickup-day questions (official DSNY lookup by address).
+
+### Stack
+
+| Piece | Role |
+|--------|------|
+| **Flask** | API + serves `frontend/` (HTML/JS, Web Speech API) |
+| **SODA** | Default **[DSNY Monthly Tonnage `ebb7-mvp5`](https://data.cityofnewyork.us/d/ebb7-mvp5)**; optional schedule id `p7k6-2pm8`; override `NYC_SODA_DATASET=c23c-uwsm` for SweepNYC |
+| **Gemini** (optional) | Plain-language answers grounded in pulled JSON (`GEMINI_API_KEY`) |
+| **Cloud Run** | Container deploy from repo root (`Dockerfile`) |
+
+**Repo:** [github.com/mastershifu24/dsny-recycling-analytics](https://github.com/mastershifu24/dsny-recycling-analytics) — clone folder name can differ; code paths are relative.
 
 ## Datasets
 
 | Dataset | Env var |
 |--------|---------|
 | DSNY Monthly Tonnage (default) | `NYC_SODA_DATASET=ebb7-mvp5` |
+| Garbage collection schedule (sample) | `NYC_SCHEDULE_DATASET=p7k6-2pm8` |
 | SweepNYC street cleaning | `NYC_SODA_DATASET=c23c-uwsm` |
 
 Optional: `SOCRATA_APP_TOKEN`, `NYC_SODA_LIMIT` (default `8000`, max `50000`).
@@ -34,27 +46,13 @@ $env:GEMINI_API_KEY = "your-key"
 python main.py
 ```
 
-## ML ideas
-
-Monthly tons = short time series. Reasonable next steps: ARIMA/SARIMA (`statsmodels`), Prophet, or BigQuery ML / Vertex Forecast if you load full history. Keep baselines and **ground** answers in real pulled data.
-
-## Explore (pandas + sodapy)
-
-```bash
-pip install pandas sodapy
-python scripts/dsny_tonnage_explore.py
-```
-
 ## API
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/ask` | `{ "question": "string" }` → `{ "answer": "string" }` |
 | GET | `/analytics/summary` | JSON analytics. Optional `?borough=bronx` |
-
-## Sample API URL (100 rows)
-
-[https://data.cityofnewyork.us/resource/ebb7-mvp5.json?%24limit=100](https://data.cityofnewyork.us/resource/ebb7-mvp5.json?%24limit=100)
+| GET | `/schedule` | Schedule sample + official lookup hint |
 
 ## Cloud Run
 
@@ -67,4 +65,4 @@ Optional: `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` after creating th
 
 ## Later
 
-- Paginate SODA or load CSV into BigQuery; charts by borough / district.
+- Photo / multimodal contamination logging; address-based schedule; BigQuery for full history.

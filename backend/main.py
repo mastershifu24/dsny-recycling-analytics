@@ -1,6 +1,6 @@
 """
 DSNY Recycling Analytics — Flask backend.
-Tonnage: DSNY Monthly Tonnage (ebb7-mvp5). Schedule sample: Garbage Collection Schedule (p7k6-2pm8).
+Voice/text for crews and drivers over NYC Open Data: tonnage (ebb7-mvp5), optional schedule sample (p7k6-2pm8).
 Env: NYC_SODA_DATASET, NYC_SCHEDULE_DATASET, SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """
 
@@ -506,7 +506,7 @@ def ask():
     if not q:
         return jsonify(
             {
-                "answer": "Ask about refuse trends, a borough, or pickup schedule (e.g. when is garbage pickup in Queens).",
+                "answer": "Ask about refuse trends by borough, pickup info, or city data—voice or text.",
             }
         )
 
