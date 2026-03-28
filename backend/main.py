@@ -1,7 +1,7 @@
 """
 DSNY Recycling Analytics — Flask backend.
-Voice/text UI over NYC Open Data: default DSNY Monthly Tonnage (ebb7-mvp5).
-Override: NYC_SODA_DATASET=c23c-uwsm (SweepNYC). Env: SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
+Tonnage: DSNY Monthly Tonnage (ebb7-mvp5). Schedule sample: Garbage Collection Schedule (p7k6-2pm8).
+Env: NYC_SODA_DATASET, NYC_SCHEDULE_DATASET, SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """
 
 from __future__ import annotations
@@ -19,8 +19,19 @@ from flask_cors import CORS
 
 DATASET_ID = os.environ.get("NYC_SODA_DATASET", "ebb7-mvp5").strip() or "ebb7-mvp5"
 SODA_RESOURCE = f"https://data.cityofnewyork.us/resource/{DATASET_ID}.json"
+SCHEDULE_DATASET_ID = os.environ.get("NYC_SCHEDULE_DATASET", "p7k6-2pm8").strip() or "p7k6-2pm8"
 IS_SWEEP = DATASET_ID == "c23c-uwsm"
 IS_TONNAGE = DATASET_ID == "ebb7-mvp5"
+
+SCHEDULE_QUESTION_KEYS = (
+    "pickup",
+    "schedule",
+    "collection day",
+    "trash day",
+    "garbage day",
+    "when is",
+    "what day",
+)
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BACKEND_DIR, "..", "frontend")
@@ -41,17 +52,57 @@ BOROUGH_NAMES = {
 }
 
 
-def fetch_soda(params: Optional[dict] = None) -> list:
+def fetch_resource(resource_id: str, params: Optional[dict] = None) -> list:
     p = dict(params or {})
     tok = os.environ.get("SOCRATA_APP_TOKEN", "").strip()
     if tok:
         p["$$app_token"] = tok
-    r = requests.get(SODA_RESOURCE, params=p, timeout=SODA_TIMEOUT)
+    url = f"https://data.cityofnewyork.us/resource/{resource_id}.json"
+    r = requests.get(url, params=p, timeout=SODA_TIMEOUT)
     r.raise_for_status()
     data = r.json()
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(f"SODA error: {data}")
     return data if isinstance(data, list) else []
+
+
+def fetch_soda(params: Optional[dict] = None) -> list:
+    return fetch_resource(DATASET_ID, params)
+
+
+def schedule_snippet(rows: list[dict]) -> str:
+    if not rows:
+        return "No rows from the schedule dataset right now."
+    parts = []
+    for row in rows[:5]:
+        r = {str(k): v for k, v in row.items() if v not in (None, "")}
+        parts.append("; ".join(f"{k}: {v}" for k, v in list(r.items())[:10]))
+    return (
+        "Sample from NYC garbage collection schedule (open data). "
+        "For your exact address, use the official DSNY collection lookup. "
+        + " | ".join(parts)
+    )
+
+
+def schedule_response(raw: str, bw: Optional[str], note: str) -> dict[str, str]:
+    rows = fetch_resource(SCHEDULE_DATASET_ID, {"$limit": "25"})
+    fb = schedule_snippet(rows)
+    if bw:
+        try:
+            ton = fetch_soda(soda_params_analytics(bw))
+            if ton:
+                s = summary_from_rows(ton, borough_note=note)
+                fb += " " + format_summary_text(s)[:1200]
+        except (requests.RequestException, RuntimeError, KeyError, TypeError):
+            pass
+    return {
+        "answer": gemini_answer(
+            raw,
+            SCHEDULE_DATASET_ID,
+            {"schedule_rows": rows[:15]},
+            fb,
+        ),
+    }
 
 
 def borough_where(q: str) -> Optional[str]:
@@ -398,6 +449,15 @@ def analytics_summary():
     return jsonify(summary_from_rows(rows, borough_note=note))
 
 
+@app.route("/schedule", methods=["GET"])
+def schedule_sample():
+    try:
+        rows = fetch_resource(SCHEDULE_DATASET_ID, {"$limit": "50"})
+    except (requests.RequestException, RuntimeError) as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"dataset": SCHEDULE_DATASET_ID, "rows": rows, "text": schedule_snippet(rows)})
+
+
 @app.route("/ask", methods=["POST"])
 def ask():
     payload = request.get_json(silent=True) or {}
@@ -408,7 +468,9 @@ def ask():
 
     if not q:
         return jsonify(
-            {"answer": "Ask about DSNY recycling/tonnage, trends, month-over-month shift, or a borough."}
+            {
+                "answer": "Ask about refuse trends, a borough, or pickup schedule (e.g. when is garbage pickup in Queens).",
+            }
         )
 
     fm = re.fullmatch(r"\d{5,8}", raw.strip())
@@ -438,6 +500,12 @@ def ask():
             return jsonify({"answer": f"No rows for physical_id {pid}."})
         fb = fmt_row(rows[0]) + (f" (+{len(rows)-1} more)" if len(rows) > 1 else "")
         return jsonify({"answer": gemini_answer(raw, "segment", {"records": rows}, fb)})
+
+    if any(k in q for k in SCHEDULE_QUESTION_KEYS):
+        try:
+            return jsonify(schedule_response(raw, bw, note))
+        except (requests.RequestException, RuntimeError) as e:
+            return jsonify({"answer": str(e)})
 
     kw = (
         "predict",
@@ -494,7 +562,7 @@ def ask():
 
     return jsonify(
         {
-            "answer": 'Try: "Bronx refuse tons trend" or "month over month change in Queens".',
+            "answer": 'Try: "Bronx refuse trend" or "pickup schedule" or "Queens garbage day".',
         }
     )
 
