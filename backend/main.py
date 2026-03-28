@@ -33,6 +33,9 @@ SCHEDULE_QUESTION_KEYS = (
     "what day",
 )
 
+# Official tool — pickup depends on address, not borough alone
+DSNY_COLLECTION_URL = "https://www.nyc.gov/site/dsny/collection/residents.page"
+
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BACKEND_DIR, "..", "frontend")
 
@@ -70,36 +73,62 @@ def fetch_soda(params: Optional[dict] = None) -> list:
     return fetch_resource(DATASET_ID, params)
 
 
+def _schedule_row_useful(row: dict) -> bool:
+    return any(v not in (None, "") and str(v).strip() for v in row.values())
+
+
 def schedule_snippet(rows: list[dict]) -> str:
-    if not rows:
-        return "No rows from the schedule dataset right now."
+    useful = [r for r in rows[:8] if _schedule_row_useful(r)]
+    if not useful:
+        return ""
     parts = []
-    for row in rows[:5]:
-        r = {str(k): v for k, v in row.items() if v not in (None, "")}
-        parts.append("; ".join(f"{k}: {v}" for k, v in list(r.items())[:10]))
+    for row in useful[:3]:
+        r = {str(k): v for k, v in row.items() if v not in (None, "") and str(v).strip()}
+        if r:
+            parts.append("; ".join(f"{k}: {v}" for k, v in list(r.items())[:8]))
+    if not parts:
+        return ""
+    return "Extra from open-data schedule sample (not your personal route): " + " | ".join(parts)
+
+
+def driver_schedule_answer(q_lower: str) -> str:
+    """Short text for pickup-day questions—no tonnage, no jargon."""
+    borough = None
+    if "staten island" in q_lower:
+        borough = "Staten Island"
+    elif "staten" in q_lower and "island" not in q_lower:
+        borough = "Staten Island"
+    else:
+        for name in ("bronx", "brooklyn", "manhattan", "queens"):
+            if name in q_lower:
+                borough = name.title()
+                break
+    bline = ""
+    if borough:
+        bline = f" You asked about {borough}—pickup days still depend on block and route, not the whole borough."
     return (
-        "Sample from NYC garbage collection schedule (open data). "
-        "For your exact address, use the official DSNY collection lookup. "
-        + " | ".join(parts)
+        "This app does not know your truck route or which day a given address is served. "
+        "To see garbage and recycling days for a home or building, use DSNY’s official collection schedule "
+        f"(enter the address): {DSNY_COLLECTION_URL}."
+        + bline
     )
 
 
-def schedule_response(raw: str, bw: Optional[str], note: str) -> dict[str, str]:
-    rows = fetch_resource(SCHEDULE_DATASET_ID, {"$limit": "25"})
-    fb = schedule_snippet(rows)
-    if bw:
-        try:
-            ton = fetch_soda(soda_params_analytics(bw))
-            if ton:
-                s = summary_from_rows(ton, borough_note=note)
-                fb += " " + format_summary_text(s)[:1200]
-        except (requests.RequestException, RuntimeError, KeyError, TypeError):
-            pass
+def schedule_response(raw: str, q_lower: str) -> dict[str, str]:
+    rows: list[dict] = []
+    try:
+        rows = fetch_resource(SCHEDULE_DATASET_ID, {"$limit": "25"})
+    except (requests.RequestException, RuntimeError):
+        pass
+    fb = driver_schedule_answer(q_lower)
+    extra = schedule_snippet(rows)
+    if extra:
+        fb += " " + extra
     return {
         "answer": gemini_answer(
             raw,
-            SCHEDULE_DATASET_ID,
-            {"schedule_rows": rows[:15]},
+            "pickup_schedule_help",
+            {"schedule_rows": rows[:8], "official": DSNY_COLLECTION_URL},
             fb,
         ),
     }
@@ -455,7 +484,15 @@ def schedule_sample():
         rows = fetch_resource(SCHEDULE_DATASET_ID, {"$limit": "50"})
     except (requests.RequestException, RuntimeError) as e:
         return jsonify({"error": str(e)}), 502
-    return jsonify({"dataset": SCHEDULE_DATASET_ID, "rows": rows, "text": schedule_snippet(rows)})
+    return jsonify(
+        {
+            "dataset": SCHEDULE_DATASET_ID,
+            "rows": rows,
+            "text": schedule_snippet(rows) or None,
+            "official_lookup": DSNY_COLLECTION_URL,
+            "hint": driver_schedule_answer(""),
+        }
+    )
 
 
 @app.route("/ask", methods=["POST"])
@@ -503,7 +540,7 @@ def ask():
 
     if any(k in q for k in SCHEDULE_QUESTION_KEYS):
         try:
-            return jsonify(schedule_response(raw, bw, note))
+            return jsonify(schedule_response(raw, q))
         except (requests.RequestException, RuntimeError) as e:
             return jsonify({"answer": str(e)})
 
