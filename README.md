@@ -1,5 +1,7 @@
 # DSNY Recycling Analytics
 
+# Ahmed Shifa, Rami Khan, Falisha Khan
+
 **Flask** app: **voice or text** → **[NYC Open Data (SODA)](https://data.cityofnewyork.us/)**. Built for **sanitation crews and truck drivers** who need **fast context** from published city data—borough refuse trends, schedule pointers—not a replacement for full enforcement paperwork when contamination needs official reporting.
 
 ### Problem we care about
