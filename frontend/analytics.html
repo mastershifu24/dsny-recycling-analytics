@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSNY tonnage analytics — viewer</title>
+  <style>
+    :root {
+      --bg: #f0f4f8;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0d9488;
+      --accent-bg: #ccfbf1;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: linear-gradient(180deg, #e0f2fe 0%, var(--bg) 32%);
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 52rem; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
+    .nav { margin-bottom: 1rem; }
+    .nav a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 0.95rem; margin: 0 0 1rem; }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center;
+      margin-bottom: 1rem;
+    }
+    .toolbar label { font-size: 0.9rem; font-weight: 600; color: var(--muted); }
+    select {
+      padding: 0.45rem 0.65rem; border-radius: 8px; border: 1px solid #cbd5e1;
+      font: inherit; background: var(--card);
+    }
+    button.load {
+      background: var(--accent); color: #fff; border: none; padding: 0.5rem 1rem;
+      border-radius: 8px; font-weight: 600; cursor: pointer; font: inherit;
+    }
+    button.load:hover { filter: brightness(1.05); }
+    button.load:disabled { opacity: 0.5; cursor: not-allowed; }
+    .banner {
+      padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem;
+      font-size: 0.92rem;
+    }
+    .banner.err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .banner.info { background: var(--accent-bg); border: 1px solid #99f6e4; color: #0f766e; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .card .k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+    .card .v { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; word-break: break-word; }
+    .card .v.sm { font-size: 0.95rem; font-weight: 500; }
+    h2 { font-size: 1rem; margin: 1.25rem 0 0.5rem; }
+    .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.5rem 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: #f8fafc; color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+    details.raw { margin-top: 1rem; }
+    details.raw summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+    pre.raw {
+      margin: 0.5rem 0 0; padding: 1rem; background: #1e293b; color: #e2e8f0;
+      border-radius: 8px; overflow: auto; max-height: 22rem; font-size: 0.75rem; line-height: 1.5;
+    }
+    .links { font-size: 0.88rem; color: var(--muted); margin-top: 1rem; }
+    .links a { color: var(--accent); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="nav"><a href="/">← DSNY Recycling Analytics</a></p>
+    <h1>Monthly garbage tonnage (viewer)</h1>
+    <p class="sub">Reads the same JSON as <code>/analytics/summary</code> — NYC Open Data sample; not an official DSNY forecast.</p>
+
+    <div class="toolbar">
+      <label for="borough">Borough filter</label>
+      <select id="borough">
+        <option value="">All boroughs (citywide sample)</option>
+        <option value="bronx">Bronx</option>
+        <option value="brooklyn">Brooklyn</option>
+        <option value="manhattan">Manhattan</option>
+        <option value="queens">Queens</option>
+        <option value="staten island">Staten Island</option>
+      </select>
+      <button type="button" class="load" id="btn-load">Load data</button>
+    </div>
+    <div id="banner"></div>
+    <div id="metrics" class="grid" style="display:none"></div>
+    <div id="pressure" class="card" style="display:none;margin-bottom:1rem"></div>
+    <h2 id="h-monthly" style="display:none">Recent months (from sample)</h2>
+    <div id="tbl-wrap" class="tbl-wrap" style="display:none"><table id="tbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    <details class="raw" id="raw-box" style="display:none">
+      <summary>Raw JSON response</summary>
+      <pre class="raw" id="raw-json"></pre>
+    </details>
+    <p class="links">
+      API: <a href="/analytics/summary" target="_blank" rel="noopener"><code>/analytics/summary</code></a>
+      · Dataset <a href="https://data.cityofnewyork.us/d/ebb7-mvp5" target="_blank" rel="noopener">DSNY monthly tonnage</a>
+    </p>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function showBanner(msg, err) {
+      const b = $('banner');
+      if (!msg) { b.innerHTML = ''; b.className = ''; return; }
+      b.className = 'banner ' + (err ? 'err' : 'info');
+      b.textContent = msg;
+    }
+    function fmtNum(x) {
+      if (x == null || x === '') return '—';
+      if (typeof x === 'number') return Number.isFinite(x) ? x.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+      return String(x);
+    }
+    function render(data) {
+      $('raw-json').textContent = JSON.stringify(data, null, 2);
+      $('raw-box').style.display = 'block';
+      showBanner(data.disclaimer || 'Loaded.', false);
+
+      const g = $('metrics');
+      g.innerHTML = '';
+      g.style.display = 'grid';
+      const add = (k, v, cls) => {
+        const d = document.createElement('div');
+        d.className = 'card';
+        d.innerHTML = '<div class="k">' + k + '</div><div class="v' + (cls ? ' ' + cls : '') + '">' + v + '</div>';
+        g.appendChild(d);
+      };
+      add('Filter note', data.borough_filter_note || '—', 'sm');
+      add('Linear next month (tons)', fmtNum(data.linear_next_month_tons));
+      add('Naive next month (tons)', fmtNum(data.naive_next_month_tons));
+      add('Sample rows used', fmtNum(data.sample_rows_used));
+
+      const pr = data.pressure_risk;
+      const pv = $('pressure');
+      if (pr && typeof pr === 'object') {
+        pv.style.display = 'block';
+        pv.innerHTML =
+          '<div class="k">Pressure band (sample z-score)</div>' +
+          '<div class="v sm" style="margin-top:0.35rem">' +
+          (pr.pressure_band || '—') +
+          (pr.pressure_z_score != null ? ' · z = ' + fmtNum(pr.pressure_z_score) : '') +
+          '</div>' +
+          '<p style="margin:0.5rem 0 0;font-size:0.88rem;color:var(--muted)">' +
+          (pr.note || '') +
+          '</p>';
+      } else {
+        pv.style.display = 'none';
+      }
+
+      const rows = data.monthly_with_shift;
+      const h = $('h-monthly');
+      const tw = $('tbl-wrap');
+      if (!Array.isArray(rows) || !rows.length) {
+        h.style.display = 'none';
+        tw.style.display = 'none';
+        return;
+      }
+      h.style.display = 'block';
+      tw.style.display = 'block';
+      const tail = rows.slice(-18);
+      const cols = ['month', 'garbage_tons_sum_in_sample', 'month_over_month_change_pct', 'year_over_year_change_pct', 'z_score_vs_trailing_prior'];
+      $('thead').innerHTML = '<tr>' + cols.map((c) => '<th>' + c.replace(/_/g, ' ') + '</th>').join('') + '</tr>';
+      const tb = $('tbody');
+      tb.innerHTML = '';
+      tail.forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = cols.map((c) => '<td>' + fmtNum(r[c]) + '</td>').join('');
+        tb.appendChild(tr);
+      });
+    }
+    async function load() {
+      showBanner('Loading…', false);
+      $('metrics').style.display = 'none';
+      $('h-monthly').style.display = 'none';
+      $('tbl-wrap').style.display = 'none';
+      $('raw-box').style.display = 'none';
+      $('pressure').style.display = 'none';
+      const b = $('borough').value;
+      const q = b ? '?borough=' + encodeURIComponent(b) : '';
+      try {
+        const res = await fetch('/analytics/summary' + q);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        render(data);
+      } catch (e) {
+        showBanner(String(e.message || e), true);
+      }
+    }
+    $('btn-load').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

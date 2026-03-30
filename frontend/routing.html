@@ -3,157 +3,323 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Garbage truck routes & optimization</title>
+  <title>Route optimization — DSNY Recycling Analytics</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 38rem; margin: 0 auto; padding: 1.25rem; line-height: 1.55; color: #0f172a; background: #f8fafc; font-size: 1rem; }
-    h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
-    p, li { margin: 0.5rem 0; }
-    a { color: #0d9488; font-weight: 600; }
-    .box { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
-    .muted { color: #64748b; font-size: 0.92rem; }
-    ul { padding-left: 1.2rem; }
-    label { display: block; font-weight: 600; margin-top: 0.5rem; font-size: 0.9rem; }
-    input, textarea, button { font: inherit; }
-    textarea { width: 100%; min-height: 7rem; padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; }
-    button { margin-top: 0.75rem; padding: 0.5rem 1rem; border-radius: 8px; border: none; background: #0d9488; color: #fff; font-weight: 600; cursor: pointer; }
-    button.secondary { background: #fff; color: #0d9488; border: 1px solid #0d9488; }
-    #out { font-size: 0.92rem; white-space: pre-wrap; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; margin-top: 0.75rem; }
+    :root {
+      --bg: #f0f4f8;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0d9488;
+      --accent-dim: #ccfbf1;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: linear-gradient(180deg, #e0f2fe 0%, var(--bg) 28%);
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 52rem; margin: 0 auto; padding: 1.25rem 1rem 2.5rem; }
+    .nav { margin-bottom: 1rem; }
+    .nav a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .nav a:hover { text-decoration: underline; }
+    h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
+    .lead { color: var(--muted); margin: 0 0 1rem; max-width: 46rem; }
+    .box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1.25rem;
+      margin: 1rem 0;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    .box h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    .presets { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .presets button {
+      font: inherit 0.82rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .presets button:hover { border-color: var(--accent); color: var(--accent); }
+    label { display: block; font-weight: 600; margin-top: 0.65rem; font-size: 0.88rem; color: var(--muted); }
+    textarea, input[type="number"] {
+      width: 100%;
+      font: inherit;
+      padding: 0.55rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      box-sizing: border-box;
+    }
+    textarea { min-height: 9rem; font-family: ui-monospace, monospace; font-size: 0.82rem; }
+    textarea.constraints { min-height: 5rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; margin-top: 0.35rem; }
+    .row label { margin: 0; font-weight: 500; font-size: 0.86rem; }
+    .row input[type="checkbox"] { accent-color: var(--accent); }
+    select { font: inherit; padding: 0.35rem 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1; }
+    .btn-primary {
+      margin-top: 0.85rem;
+      padding: 0.55rem 1.15rem;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      font: inherit;
+    }
+    .btn-primary:hover { filter: brightness(1.05); }
+    .out {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+    }
+    .out dl { margin: 0; display: grid; gap: 0.35rem; }
+    .out dt { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .out dd { margin: 0 0 0.5rem; }
+    .out ol { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+    .muted { color: var(--muted); font-size: 0.88rem; }
+    .api-links { font-size: 0.82rem; word-break: break-all; }
+    .api-links code { background: #f1f5f9; padding: 0.15rem 0.35rem; border-radius: 4px; }
     code { font-size: 0.85em; }
+    a.maplink { display: inline-block; margin-top: 0.5rem; font-weight: 600; color: var(--accent); }
+    ul.res { margin: 0.35rem 0 0; padding-left: 1.2rem; }
   </style>
 </head>
 <body>
-  <p><a href="/">← Back to app</a></p>
-  <h1>Rank & optimize garbage truck routes</h1>
-  <p><strong>Goal:</strong> ordered stops using <strong>road driving times</strong> (OSRM) when possible, plus datasets for constraints. Borough <strong>tonnage</strong> in the main app is separate.</p>
+  <div class="wrap">
+    <p class="nav"><a href="/">← Back to app</a> · <a href="/analytics">Tonnage analytics</a></p>
+    <h1>Garbage truck route order (planning)</h1>
+    <p class="lead">Weighted-greedy ordering from coordinates—education / what-if, not DSNY dispatch. Default <strong>use_osrm off</strong> in presets for quick runs; turn on OSRM for road-network times (slower).</p>
 
-  <div class="box" id="demo">
-    <strong>Basic stop optimizer (built-in)</strong>
-    <p class="muted">Paste JSON: <code>lat</code>, <code>lng</code>, optional <code>label</code>, and optional <code>borough</code> + <code>community_district</code> (NYC community board number, 1–18) to <strong>bias order toward higher garbage-tonnage districts</strong> using latest published DSNY monthly data (Open Data). Nearest-neighbor order. Optional: <strong>Google live traffic</strong> (needs <code>GOOGLE_MAPS_API_KEY</code> on the server). NYC DOT truck rules are not baked into Google—use <strong>Truck-aware</strong> for links + disclaimer.</p>
-    <label for="jsonIn">Stops JSON</label>
-    <textarea id="jsonIn" spellcheck="false">[
-  {"lat": 40.7589, "lng": -73.9851, "label": "Times Sq"},
-  {"lat": 40.7484, "lng": -73.9857, "label": "MSG"},
-  {"lat": 40.7614, "lng": -73.9776, "label": "Rock Center"}
-]</textarea>
-    <p class="muted"><label><input type="checkbox" id="useGoogleTraffic" /> Google live traffic (Routes API v2 + legacy fallback)</label></p>
-    <p class="muted"><label>Traffic model <select id="trafficModel"><option value="best_guess">best_guess</option><option value="pessimistic">pessimistic</option><option value="optimistic">optimistic</option></select></label></p>
-    <p class="muted"><label><input type="checkbox" id="truckAware" /> Truck-aware (vehicleStopover + NYC DOT links)</label></p>
-    <p class="muted">Google modifiers: <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidTolls" /> avoid tolls</label>
-      <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidHighways" /> avoid highways</label>
-      <label style="display:inline;font-weight:500"><input type="checkbox" id="avoidFerries" /> avoid ferries</label></p>
-    <p class="muted"><label><input type="checkbox" id="districtPriority" /> District priority (high garbage-tonnage community districts first, from NYC Open Data)</label></p>
-    <p class="muted"><label>Priority strength <input type="number" id="districtPriorityStrength" min="0" max="1" step="0.05" value="0.45" style="width:4rem" /> (0 = ignore, 1 = strongest bias)</label></p>
-    <p class="muted"><label><input type="checkbox" id="useOsrm" checked /> Fall back to OSRM if Google fails (or when traffic off)</label></p>
-    <button type="button" id="btnOpt">Optimize order</button>
-    <div id="out" aria-live="polite"></div>
-    <p id="mapLink" class="muted"></p>
+    <div class="box" id="demo">
+      <h2>Sample stops (NYC coordinates)</h2>
+      <p class="muted">Load a preset, then <strong>Optimize order</strong>. You can edit JSON or add optional <code>constraints</code>.</p>
+      <div class="presets">
+        <button type="button" data-preset="manhattan">Manhattan (4)</button>
+        <button type="button" data-preset="brooklyn">Brooklyn (3)</button>
+        <button type="button" data-preset="queens">Queens (3)</button>
+        <button type="button" data-preset="bronx">Bronx (3)</button>
+        <button type="button" data-preset="staten">Staten Island (2)</button>
+        <button type="button" data-preset="cross_borough">Cross-borough (3)</button>
+        <button type="button" data-preset="planning_demo">Planning demo (streams + CD)</button>
+      </div>
+      <label for="jsonIn">Stops JSON (<code>lat</code>, <code>lng</code>, <code>label</code>; optional <code>borough</code>, <code>community_district</code>, <code>service_type</code>, <code>missed_prior_visit</code>)</label>
+      <textarea id="jsonIn" spellcheck="false"></textarea>
+      <label for="constraintsIn">Optional <code>constraints</code> JSON (merge into POST)</label>
+      <textarea id="constraintsIn" class="constraints" spellcheck="false">{}</textarea>
+      <div class="row">
+        <label><input type="checkbox" id="useGoogleTraffic" /> Google live traffic</label>
+        <label>Traffic <select id="trafficModel"><option value="best_guess">best_guess</option><option value="pessimistic">pessimistic</option><option value="optimistic">optimistic</option></select></label>
+        <label><input type="checkbox" id="truckAware" /> Truck-aware</label>
+        <label><input type="checkbox" id="avoidTolls" /> Avoid tolls</label>
+        <label><input type="checkbox" id="avoidHighways" /> Avoid highways</label>
+        <label><input type="checkbox" id="avoidFerries" /> Avoid ferries</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="districtPriority" /> District priority (tonnage)</label>
+        <label>Strength <input type="number" id="districtPriorityStrength" min="0" max="1" step="0.05" value="0.45" style="width:4rem" /></label>
+        <label><input type="checkbox" id="useOsrm" /> Use OSRM (slower; road times)</label>
+      </div>
+      <button type="button" class="btn-primary" id="btnOpt">Optimize order</button>
+      <div id="out" class="out" style="display:none" aria-live="polite"></div>
+      <p id="mapLink" class="muted"></p>
+    </div>
+
+    <div class="box">
+      <h2>API quick links</h2>
+      <p class="muted">Help JSON (GET) and example query string. Uses this site’s origin.</p>
+      <p class="api-links"><a id="help-url" href="/api/route/optimize">/api/route/optimize</a> · <a id="get-example-url" href="#">example GET</a></p>
+    </div>
+
+    <div class="box">
+      <h2>DOT &amp; schedule</h2>
+      <ul class="muted">
+        <li><a href="https://data.cityofnewyork.us/Transportation/New-York-City-Truck-Routes-Map/wnu3-egq7" target="_blank" rel="noopener">NYC truck routes (map)</a></li>
+        <li><a href="https://data.cityofnewyork.us/City-Government/NYC-Street-Centerline-CSCL-/exjm-f27b" target="_blank" rel="noopener">Street centerline (CSCL)</a></li>
+        <li><a href="https://www.nyc.gov/site/dsny/collection/residents.page" target="_blank" rel="noopener">DSNY pickup lookup</a></li>
+      </ul>
+    </div>
   </div>
-
-  <div class="box">
-    <strong>DOT — truck route network (constraints for driving)</strong>
-    <ul>
-      <li><a href="https://data.cityofnewyork.us/Transportation/New-York-City-Truck-Routes-Map/wnu3-egq7" target="_blank" rel="noopener">New York City Truck Routes (Map)</a> — NYC Open Data</li>
-    </ul>
-    <p class="muted">Use this layer so optimized paths respect where commercial trucks may or must run.</p>
-  </div>
-
-  <div class="box">
-    <strong>Street graph (for routing engines)</strong>
-    <ul>
-      <li><a href="https://data.cityofnewyork.us/City-Government/NYC-Street-Centerline-CSCL-/exjm-f27b" target="_blank" rel="noopener">NYC Street Centerline (CSCL)</a></li>
-    </ul>
-    <p class="muted">OSRM above uses OpenStreetMap; full VRP can add time windows and capacity later.</p>
-  </div>
-
-  <div class="box">
-    <strong>Pickup day (per address)</strong>
-    <ul>
-      <li><a href="https://www.nyc.gov/site/dsny/collection/residents.page" target="_blank" rel="noopener">DSNY collection schedule lookup</a></li>
-    </ul>
-  </div>
-
-  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> — same flags plus optional <code>constraints</code> object: <code>start_facility</code> / <code>end_facility</code> (<code>lat</code>, <code>lng</code>, <code>label</code>), <code>service_type_switch_penalty_sec</code>, per-stop <code>service_type</code> (refuse/recycling/organics/mixed), <code>missed_prior_visit</code>, <code>shift_max_seconds</code>, <code>default_service_seconds</code>. Fast weighted-greedy planning—not dispatch.</p>
 
   <script>
+    const PRESETS = {
+      manhattan: [
+        { lat: 40.7589, lng: -73.9851, label: "Times Square" },
+        { lat: 40.7484, lng: -73.9857, label: "Madison Sq Garden" },
+        { lat: 40.7614, lng: -73.9776, label: "Rockefeller Center" },
+        { lat: 40.7527, lng: -73.9772, label: "Grand Central" },
+      ],
+      brooklyn: [
+        { lat: 40.6826, lng: -73.9754, label: "Barclays Center" },
+        { lat: 40.6602, lng: -73.969, label: "Prospect Park" },
+        { lat: 40.7061, lng: -73.9969, label: "Brooklyn Bridge" },
+      ],
+      queens: [
+        { lat: 40.757, lng: -73.8458, label: "Citi Field" },
+        { lat: 40.7282, lng: -73.7949, label: "Flushing" },
+        { lat: 40.7465, lng: -73.903, label: "Long Island City" },
+      ],
+      bronx: [
+        { lat: 40.8296, lng: -73.9265, label: "Yankee Stadium" },
+        { lat: 40.8625, lng: -73.8803, label: "Bronx Zoo" },
+        { lat: 40.8082, lng: -73.9222, label: "South Bronx" },
+      ],
+      staten: [
+        { lat: 40.6437, lng: -74.0752, label: "SI Ferry" },
+        { lat: 40.5795, lng: -74.0752, label: "SI Mall area" },
+      ],
+      cross_borough: [
+        { lat: 40.7614, lng: -73.9776, label: "Midtown (MN)" },
+        { lat: 40.6782, lng: -73.9442, label: "Brooklyn" },
+        { lat: 40.7282, lng: -73.7949, label: "Queens" },
+      ],
+      planning_demo: [
+        { lat: 40.75, lng: -73.98, label: "Refuse A", service_type: "refuse", borough: "MANHATTAN", community_district: 6 },
+        { lat: 40.76, lng: -73.99, label: "Recycling B", service_type: "recycling", borough: "MANHATTAN", community_district: 6 },
+        { lat: 40.748, lng: -73.985, label: "Missed C", service_type: "mixed", missed_prior_visit: true, borough: "MANHATTAN", community_district: 6 },
+      ],
+    };
+    const CONSTRAINTS_PRESET = {
+      planning_demo: JSON.stringify({
+        service_type_switch_penalty_sec: 120,
+        missed_priority_boost: 0.4,
+        default_service_seconds: 90,
+      }, null, 2),
+    };
+
     function _el(id) { return document.getElementById(id); }
     function _chk(id, fallback) {
       const n = _el(id);
-      return n && 'checked' in n ? n.checked : fallback;
+      return n && "checked" in n ? n.checked : fallback;
     }
     function _val(id, fallback) {
       const n = _el(id);
       return n && n.value !== undefined ? n.value : fallback;
     }
-    document.getElementById('btnOpt').addEventListener('click', async () => {
-      const out = document.getElementById('out');
-      const mapLink = document.getElementById('mapLink');
-      out.textContent = 'Running…';
-      mapLink.innerHTML = '';
+
+    function setApiLinks() {
+      const origin = window.location.origin;
+      _el("help-url").href = origin + "/api/route/optimize";
+      const ex =
+        origin +
+        "/api/route/optimize?stops=40.758,-73.9855|40.7484,-73.9857|40.7614,-73.9776&use_osrm=false";
+      const a = _el("get-example-url");
+      a.href = ex;
+      a.textContent = "GET example (3 stops, fast)";
+    }
+
+    document.querySelectorAll("[data-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.getAttribute("data-preset");
+        const stops = PRESETS[key];
+        if (!stops) return;
+        _el("jsonIn").value = JSON.stringify(stops, null, 2);
+        _el("constraintsIn").value = CONSTRAINTS_PRESET[key] || "{}";
+        if (key === "planning_demo") _el("districtPriority").checked = true;
+      });
+    });
+
+    _el("jsonIn").value = JSON.stringify(PRESETS.manhattan, null, 2);
+    setApiLinks();
+
+    _el("btnOpt").addEventListener("click", async () => {
+      const out = _el("out");
+      const mapLink = _el("mapLink");
+      out.style.display = "block";
+      out.innerHTML = "<p>Running…</p>";
+      mapLink.innerHTML = "";
       let stops;
       try {
-        stops = JSON.parse(document.getElementById('jsonIn').value);
+        stops = JSON.parse(_el("jsonIn").value);
       } catch (e) {
-        out.textContent = 'Invalid JSON: ' + e.message;
+        out.innerHTML = "<p>Invalid stops JSON: " + e.message + "</p>";
         return;
       }
       if (!Array.isArray(stops)) {
-        out.textContent = 'JSON must be an array of stops.';
+        out.innerHTML = "<p>Stops must be a JSON array.</p>";
         return;
       }
+      let constraints = {};
       try {
-        const res = await fetch('/api/route/optimize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            stops,
-            start_index: 0,
-            use_osrm: _chk('useOsrm', true),
-            use_google_traffic: _chk('useGoogleTraffic', false),
-            traffic_model: _val('trafficModel', 'best_guess'),
-            truck_aware: _chk('truckAware', false),
-            avoid_tolls: _chk('avoidTolls', false),
-            avoid_highways: _chk('avoidHighways', false),
-            avoid_ferries: _chk('avoidFerries', false),
-            use_district_priority: _chk('districtPriority', false),
-            district_priority_strength: parseFloat(_val('districtPriorityStrength', '0.45')) || 0.45,
-          }),
+        const raw = _el("constraintsIn").value.trim();
+        if (raw) constraints = JSON.parse(raw);
+        if (constraints && typeof constraints !== "object") throw new Error("constraints must be an object");
+      } catch (e) {
+        out.innerHTML = "<p>Invalid constraints JSON: " + e.message + "</p>";
+        return;
+      }
+      const body = {
+        stops,
+        start_index: 0,
+        use_osrm: _chk("useOsrm", false),
+        use_google_traffic: _chk("useGoogleTraffic", false),
+        traffic_model: _val("trafficModel", "best_guess"),
+        truck_aware: _chk("truckAware", false),
+        avoid_tolls: _chk("avoidTolls", false),
+        avoid_highways: _chk("avoidHighways", false),
+        avoid_ferries: _chk("avoidFerries", false),
+        use_district_priority: _chk("districtPriority", false),
+        district_priority_strength: parseFloat(_val("districtPriorityStrength", "0.45")) || 0.45,
+      };
+      if (constraints && Object.keys(constraints).length) body.constraints = constraints;
+
+      try {
+        const res = await fetch("/api/route/optimize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) {
-          out.textContent = data.error || res.statusText;
+          out.innerHTML = "<p>" + (data.error || res.statusText) + "</p>";
           return;
         }
-        let lines = [
-          'Matrix: ' + data.matrix_kind,
-          data.google_traffic_engine ? 'Google engine: ' + data.google_traffic_engine : '',
-          'Live traffic: ' + (data.live_traffic ? 'yes (' + data.traffic_model + ')' : 'no'),
-          data.truck_profile_applied ? 'Truck profile (waypoints): on' : '',
-          data.district_priority && data.district_priority.enabled ? 'District priority: ' + JSON.stringify(data.district_priority) : '',
-          'Order: ' + data.order_indices.join(' → '),
-          'Edge sum (sec): ' + data.total_edge_duration_sec,
-          data.route_duration_sec != null ? 'Route total (sec): ' + data.route_duration_sec : '',
-          data.route_distance_m != null ? 'Route distance (m): ' + data.route_distance_m : '',
-          '',
-          'Ordered stops:',
-          ...data.ordered_stops.map((s, i) => (i + 1) + '. ' + s.label + ' — ' + s.lat + ', ' + s.lng),
-          '',
-          data.disclaimer,
-        ].filter(Boolean);
-        if (data.nyc_truck_resources && data.nyc_truck_resources.length) {
-          lines.push('', 'NYC truck resources (manual compliance):');
-          data.nyc_truck_resources.forEach(function (r) {
-            lines.push('  - ' + r.label + '\n    ' + r.url);
+        const parts = [];
+        parts.push("<dl>");
+        parts.push("<dt>Planning</dt><dd>" + (data.planning ? data.planning.purpose + " · " + data.planning.solver : "—") + "</dd>");
+        parts.push("<dt>Matrix</dt><dd>" + data.matrix_kind + (data.live_traffic ? " · traffic " + data.traffic_model : "") + "</dd>");
+        parts.push("<dt>Order (indices)</dt><dd>" + (data.order_indices || []).join(" → ") + "</dd>");
+        if (data.order_indices_note) parts.push("<dt>Note</dt><dd>" + data.order_indices_note + "</dd>");
+        parts.push("<dt>Edge sum (sec)</dt><dd>" + data.total_edge_duration_sec + "</dd>");
+        if (data.route_duration_sec != null) parts.push("<dt>Route total (sec)</dt><dd>" + data.route_duration_sec + "</dd>");
+        if (data.route_distance_m != null) parts.push("<dt>Route distance (m)</dt><dd>" + data.route_distance_m + "</dd>");
+        parts.push("</dl>");
+        parts.push("<p><strong>Ordered stops</strong></p><ol>");
+        data.ordered_stops.forEach((s) => {
+          parts.push("<li>" + (s.label || s.role || "") + " — " + s.lat + ", " + s.lng + "</li>");
+        });
+        parts.push("</ol>");
+        if (data.shift_segments && data.shift_segments.length) {
+          parts.push("<p><strong>Shift segments</strong> (approx.)</p><ul class='res'>");
+          data.shift_segments.forEach((seg, i) => {
+            parts.push("<li>Segment " + (i + 1) + ": ~" + seg.approx_elapsed_sec + " s</li>");
           });
+          parts.push("</ul>");
         }
-        out.textContent = lines.join('\n');
-        const a = document.createElement('a');
+        parts.push("<p class='muted'>" + data.disclaimer + "</p>");
+        out.innerHTML = parts.join("");
+        const a = document.createElement("a");
         a.href = data.google_maps_url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        a.textContent = 'Open ordered route in Google Maps';
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.className = "maplink";
+        a.textContent = "Open ordered route in Google Maps";
+        mapLink.innerHTML = "";
         mapLink.appendChild(a);
       } catch (e) {
-        out.textContent = 'Request failed: ' + e.message;
+        out.innerHTML = "<p>Request failed: " + e.message + "</p>";
       }
     });
   </script>

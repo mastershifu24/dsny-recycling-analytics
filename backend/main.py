@@ -694,10 +694,25 @@ def script_js():
     return send_from_directory(FRONTEND_DIR, "script.js")
 
 
+def _external_base_url() -> str:
+    """Use https and real host when behind Cloud Run / reverse proxies."""
+    proto = (request.headers.get("X-Forwarded-Proto") or request.scheme or "https").split(",")[0].strip()
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(",")[0].strip()
+    if not host:
+        host = request.environ.get("HTTP_HOST", "localhost")
+    return f"{proto}://{host}".rstrip("/")
+
+
 @app.route("/routing")
 def routing_links_page():
     """Static links: DOT truck network, CSCL, DSNY schedule—no API integration."""
     return send_from_directory(FRONTEND_DIR, "routing.html")
+
+
+@app.route("/analytics")
+def analytics_page():
+    """Human-readable view of /analytics/summary (same NYC Open Data backend)."""
+    return send_from_directory(FRONTEND_DIR, "analytics.html")
 
 
 def _execute_route_optimize(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
@@ -805,7 +820,7 @@ def api_route_optimize():
     if request.method == "GET":
         q_stops = request.args.get("stops", "").strip()
         if not q_stops:
-            base = request.url_root.rstrip("/")
+            base = _external_base_url()
             return jsonify(
                 {
                     "message": "Send POST with JSON, or GET with ?stops=lat,lng|lat,lng (pipe-separated).",
@@ -818,10 +833,15 @@ def api_route_optimize():
                                 {"lat": 40.7484, "lng": -73.9857, "label": "B"},
                             ],
                             "use_osrm": False,
+                            "constraints": {
+                                "service_type_switch_penalty_sec": 120,
+                                "shift_max_seconds": 25200,
+                            },
                         },
                     },
                     "get_example": (
-                        f"{base}/api/route/optimize?stops=40.758,-73.9855|40.7484,-73.9857&use_osrm=false"
+                        f"{base}/api/route/optimize?stops=40.758,-73.9855|40.7484,-73.9857|40.7614,-73.9776"
+                        f"&use_osrm=false"
                     ),
                     "web_ui": f"{base}/routing",
                 }
