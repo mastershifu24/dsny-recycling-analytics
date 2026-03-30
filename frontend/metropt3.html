@@ -205,7 +205,7 @@ a.nav-back:hover{text-decoration:underline}
     <span style="font-size:11px;color:var(--mut);font-family:'JetBrains Mono',monospace">v2.1 · API</span>
     <a class="nav-back" href="/">← DSNY Recycling Analytics</a>
   </div>
-  <div class="hdr-sub">RBF SVM · Gemini (server) — <code>/api/metropt3/*</code> (Flask + sklearn)</div>
+  <div class="hdr-sub">RBF SVM · Truck-style oil temp, motor load, pressures &amp; levels (synthetic demo) — <code>/api/metropt3/*</code></div>
   <div id="banner"></div>
   <div class="tabs">
     <button class="tab on" onclick="sw('eda',this)">EDA</button>
@@ -251,24 +251,31 @@ a.nav-back:hover{text-decoration:underline}
   </div>
   <div class="g2">
     <div class="card">
-      <div class="ctitle">Live sensor input</div>
-      <div class="sr"><label>Oil temperature (°C)</label><input type="range" id="s-ot" min="20" max="120" value="70" step="0.5" oninput="sv('v-ot',this.value,1);rp()"><span class="val" id="v-ot">70.0</span></div>
-      <div class="sr"><label>Motor current (A)</label><input type="range" id="s-mc" min="0" max="20" value="5" step="0.1" oninput="sv('v-mc',this.value,1);rp()"><span class="val" id="v-mc">5.0</span></div>
-      <div class="sr"><label>TP2 pressure (bar)</label><input type="range" id="s-t2" min="0" max="15" value="9" step="0.1" oninput="sv('v-t2',this.value,1);rp()"><span class="val" id="v-t2">9.0</span></div>
-      <div class="sr"><label>TP3 pressure (bar)</label><input type="range" id="s-t3" min="0" max="15" value="9" step="0.1" oninput="sv('v-t3',this.value,1);rp()"><span class="val" id="v-t3">9.0</span></div>
-      <div class="sr"><label>H1 pressure drop</label><input type="range" id="s-h1" min="0" max="2" value="0.1" step="0.05" oninput="sv('v-h1',this.value,2);rp()"><span class="val" id="v-h1">0.10</span></div>
+      <div class="ctitle">Truck &amp; unit readings (demo)</div>
+      <p style="font-size:12px;color:var(--mut);margin:-4px 0 12px;line-height:1.55">Same eight channels as the model: <strong>oil temp</strong>, <strong>motor current</strong>, <strong>TP2/TP3</strong> pressures, <strong>H1</strong> restriction, <strong>compressor</strong>, <strong>low-pressure switch</strong>, <strong>oil level</strong>. Not live DSNY telematics.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+        <button type="button" class="btns" onclick="applyScenario('baseline')">Baseline (normal)</button>
+        <button type="button" class="btns" onclick="applyScenario('hot_oil')">Hot oil / high load</button>
+        <button type="button" class="btns" onclick="applyScenario('low_pressure')">Low pressure / LPS</button>
+        <button type="button" class="btns" onclick="applyScenario('borderline')">Borderline</button>
+      </div>
+      <div class="sr"><label>Oil temp — engine / hydraulic (°C)</label><input type="range" id="s-ot" min="20" max="120" value="70" step="0.5" oninput="sv('v-ot',this.value,1);rp()"><span class="val" id="v-ot">70.0</span></div>
+      <div class="sr"><label>Motor current — pump &amp; compaction (A)</label><input type="range" id="s-mc" min="0" max="20" value="5" step="0.1" oninput="sv('v-mc',this.value,1);rp()"><span class="val" id="v-mc">5.0</span></div>
+      <div class="sr"><label>TP2 line pressure (bar)</label><input type="range" id="s-t2" min="0" max="15" value="9" step="0.1" oninput="sv('v-t2',this.value,1);rp()"><span class="val" id="v-t2">9.0</span></div>
+      <div class="sr"><label>TP3 line pressure (bar)</label><input type="range" id="s-t3" min="0" max="15" value="9" step="0.1" oninput="sv('v-t3',this.value,1);rp()"><span class="val" id="v-t3">9.0</span></div>
+      <div class="sr"><label>H1 restriction / ΔP (bar)</label><input type="range" id="s-h1" min="0" max="2" value="0.1" step="0.05" oninput="sv('v-h1',this.value,2);rp()"><span class="val" id="v-h1">0.10</span></div>
       <hr>
       <p style="font-size:10.5px;font-weight:500;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Digital sensors</p>
-      <div class="selr"><label>Compressor (COMP)</label><select id="s-comp" onchange="rp()"><option value="1">1 — active</option><option value="0">0 — off</option></select></div>
-      <div class="selr"><label>Low-pressure switch (LPS)</label><select id="s-lps" onchange="rp()"><option value="0">0 — normal</option><option value="1">1 — triggered</option></select></div>
-      <div class="selr"><label>Oil level</label><select id="s-oil" onchange="rp()"><option value="1">1 — normal</option><option value="0">0 — low</option></select></div>
+      <div class="selr"><label>Aux. compressor (COMP)</label><select id="s-comp" onchange="rp()"><option value="1">1 — running</option><option value="0">0 — off</option></select></div>
+      <div class="selr"><label>Low-pressure switch (LPS)</label><select id="s-lps" onchange="rp()"><option value="0">0 — OK</option><option value="1">1 — trip</option></select></div>
+      <div class="selr"><label>Sump oil level</label><select id="s-oil" onchange="rp()"><option value="1">1 — normal</option><option value="0">0 — low</option></select></div>
       <hr style="margin:14px 0;border:none;border-top:1px solid var(--bdr2)">
       <p style="font-size:10.5px;font-weight:500;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Paste readings (tabs, labels, or JSON)</p>
-      <textarea id="paste-readings" class="paste-ta" spellcheck="false" placeholder='Oil temperature	70.31
+      <textarea id="paste-readings" class="paste-ta" spellcheck="false" placeholder='Oil temp (hydraulic)	70.3
 Motor current	5.15
-COMP	0.80
-TP2 pressure	8.91
-TP3 pressure	9.03
+COMP	1
+TP2	8.91
+TP3	9.03
 H1	0.1
 LPS	0
 Oil level	1'></textarea>
@@ -394,9 +401,29 @@ async function loadDiag() {
 
 function sv(id, v, dp) { document.getElementById(id).textContent = parseFloat(v).toFixed(dp); }
 
+function applyScenario(which) {
+  const S = {
+    baseline: { ot: 70, mc: 5, t2: 9, t3: 9, h1: 0.1, comp: 1, lps: 0, oil: 1 },
+    hot_oil: { ot: 98, mc: 14, t2: 9, t3: 8.2, h1: 0.55, comp: 1, lps: 0, oil: 1 },
+    low_pressure: { ot: 76, mc: 7, t2: 4.2, t3: 8, h1: 0.75, comp: 1, lps: 1, oil: 1 },
+    borderline: { ot: 86, mc: 9.5, t2: 7.5, t3: 9, h1: 0.35, comp: 1, lps: 0, oil: 1 },
+  };
+  const x = S[which];
+  if (!x) return;
+  setRangeSensor('s-ot', 'v-ot', x.ot, 1);
+  setRangeSensor('s-mc', 'v-mc', x.mc, 1);
+  setRangeSensor('s-t2', 'v-t2', x.t2, 1);
+  setRangeSensor('s-t3', 'v-t3', x.t3, 1);
+  setRangeSensor('s-h1', 'v-h1', x.h1, 2);
+  setBinarySelect('s-comp', x.comp);
+  setBinarySelect('s-lps', x.lps);
+  setBinarySelect('s-oil', x.oil);
+  rp();
+}
+
 function labelToSensorKey(name) {
   const n = name.toLowerCase().replace(/\s+/g, ' ').trim();
-  if (/oil\s*temp/.test(n)) return 'Oil_temperature';
+  if (/oil\s*temp|truck\s*temp|hydraulic\s*temp/.test(n)) return 'Oil_temperature';
   if (/motor\s*current/.test(n)) return 'Motor_current';
   if (/^comp|^compressor/.test(n)) return 'COMP';
   if (/tp2/.test(n)) return 'TP2';

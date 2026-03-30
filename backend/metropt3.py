@@ -31,14 +31,14 @@ FEATURE_COLS = [
 ]
 
 FEATURE_LABELS = {
-    "Oil_temperature": "Oil temperature (°C)",
-    "Motor_current": "Motor current (A)",
-    "COMP": "Compressor active (COMP)",
-    "TP2": "Pressure TP2 (bar)",
-    "TP3": "Pressure TP3 (bar)",
-    "H1": "Pressure drop H1 (bar)",
-    "LPS": "Low-pressure switch (LPS)",
-    "Oil_level": "Oil level (1=normal)",
+    "Oil_temperature": "Oil temp — engine / hydraulic circuit (°C)",
+    "Motor_current": "Motor current — pump & compaction load (A)",
+    "COMP": "Auxiliary compressor running (COMP)",
+    "TP2": "Line pressure TP2 (bar)",
+    "TP3": "Line pressure TP3 (bar)",
+    "H1": "Restriction / ΔP across H1 (bar)",
+    "LPS": "Low-pressure switch (trip)",
+    "Oil_level": "Sump oil level OK (1 = normal)",
 }
 
 _bundle: Optional[dict[str, Any]] = None
@@ -60,7 +60,7 @@ def label_to_sensor_key(name: str) -> Optional[str]:
     """Map pasted label text to FEATURE_COLS name."""
     n = name.lower().replace("\t", " ").strip()
     n = re.sub(r"\s+", " ", n)
-    if re.search(r"oil\s*temp", n):
+    if re.search(r"oil\s*temp|truck\s*temp|hydraulic\s*temp|coolant", n):
         return "Oil_temperature"
     if re.search(r"motor\s*current", n):
         return "Motor_current"
