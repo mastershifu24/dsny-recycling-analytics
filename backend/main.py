@@ -1,7 +1,7 @@
 """
 DSNY Recycling Analytics — Flask backend.
 Voice/text + NYC Open Data (tonnage ebb7-mvp5, schedule sample p7k6-2pm8).
-Optional multimodal: POST /analyze-image (Gemini + PIL) with demo citation tool—not real enforcement.
+Optional multimodal: POST /analyze-image (Gemini + PIL; short video → sampled frames via imageio/ffmpeg) with demo citation tool—not real enforcement.
 Env: NYC_SODA_DATASET, NYC_SCHEDULE_DATASET, SOCRATA_APP_TOKEN, GEMINI_API_KEY, NYC_SODA_LIMIT.
 """
 
@@ -60,7 +60,7 @@ FRONTEND_DIR = os.path.join(BACKEND_DIR, "..", "frontend")
 
 app = Flask(__name__)
 CORS(app)
-app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB for photo uploads
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # photos + short video clips
 
 SODA_TIMEOUT = 90
 
@@ -116,21 +116,88 @@ def _function_call_args(fc: Any) -> dict[str, Any]:
         return {}
 
 
-def run_multimodal_analysis(image: Any, question: str) -> dict[str, Any]:
-    """Image (PIL) + text → Gemini with optional issue_dsny_citation tool."""
+def _video_bytes_to_pil_frames(data: bytes, filename: str) -> list[Any]:
+    """Sample up to 3 frames (start / middle / end) for Gemini. Requires imageio + ffmpeg."""
+    import os
+    import tempfile
+
+    import imageio.v2 as imageio
+    from PIL import Image as PILImage
+
+    ext = os.path.splitext((filename or "").lower())[1] or ".mp4"
+    if ext not in (".mp4", ".webm", ".mov", ".mkv", ".m4v"):
+        ext = ".mp4"
+    fd, path = tempfile.mkstemp(suffix=ext)
+    os.close(fd)
+    try:
+        with open(path, "wb") as w:
+            w.write(data)
+        reader = imageio.get_reader(path, "ffmpeg")
+        try:
+            n = int(reader.count_frames())
+        except Exception:
+            try:
+                lg = reader.get_length()
+                n = int(lg) if lg not in (float("inf"), float("-inf")) else 1
+            except Exception:
+                n = 1
+        if n < 1:
+            n = 1
+        indices = [0]
+        if n > 1:
+            indices.append(n // 2)
+        if n > 2:
+            indices.append(n - 1)
+        indices = sorted(set(indices))[:3]
+        out: list[Any] = []
+        for idx in indices:
+            arr = reader.get_data(idx)
+            im = PILImage.fromarray(arr)
+            if im.mode != "RGB":
+                im = im.convert("RGB")
+            out.append(im)
+        reader.close()
+        return out
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def run_multimodal_analysis(images: Any, question: str) -> dict[str, Any]:
+    """One or more PIL images (e.g. video frames) + text → Gemini with optional issue_dsny_citation tool."""
     import google.generativeai as genai
     from PIL import Image as PILImage
 
-    if not isinstance(image, PILImage.Image):
-        raise TypeError("Expected PIL Image")
-    if image.mode in ("RGBA", "P"):
-        image = image.convert("RGB")
+    if not isinstance(images, list):
+        imgs = [images]
+    else:
+        imgs = images
+    if not imgs:
+        raise ValueError("No images to analyze")
+    clean: list[Any] = []
+    for image in imgs:
+        if not isinstance(image, PILImage.Image):
+            raise TypeError("Expected PIL Image")
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGB")
+        clean.append(image)
 
     genai.configure(api_key=os.environ["GEMINI_API_KEY"].strip())
     ctx = json.dumps(DSNY_RECYCLING_CONTEXT)
+    frame_note = ""
+    if len(clean) > 1:
+        frame_note = (
+            f"You are given {len(clean)} frames sampled from a user video (not full continuous footage). "
+            "Infer contamination or scene context from these samples. "
+        )
     system_instruction = (
         "You are a DSNY crew assistant (demo). "
         f"Illustrative district context (sample, not live open data): {ctx}. "
+        "Do not claim live enforcement history, real fine amounts, or official district violation records unless from tool output; "
+        "this context is illustrative. "
+        f"{frame_note}"
         "If you see clear recycling contamination (e.g. recyclables in trash bags), "
         "call issue_dsny_citation(district, contamination_type, address). "
         "Prefer district keys like Brooklyn_District_4 when they match the scene. "
@@ -142,7 +209,7 @@ def run_multimodal_analysis(image: Any, question: str) -> dict[str, Any]:
         system_instruction=system_instruction,
     )
     response = model.generate_content(
-        [image, question],
+        [*clean, question],
         generation_config=genai.GenerationConfig(temperature=0.3),
     )
     if not response.candidates:
@@ -907,14 +974,48 @@ def schedule_sample():
     )
 
 
+def _load_media_for_multimodal(f: Any) -> tuple[Any, str]:
+    """Return (PIL Image or list of PIL Images, kind: image|video)."""
+    from PIL import Image as PILImage
+
+    data = f.read()
+    if not data:
+        raise ValueError("Empty upload.")
+    name = (getattr(f, "filename", None) or "").lower()
+    ctype = (getattr(f, "content_type", None) or "").lower()
+
+    try:
+        img = PILImage.open(io.BytesIO(data))
+        img.load()
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        return img, "image"
+    except Exception:
+        pass
+
+    is_video = ctype.startswith("video/") or name.endswith(
+        (".mp4", ".webm", ".mov", ".mkv", ".m4v")
+    )
+    if not is_video:
+        raise ValueError(
+            "Could not read as image. For video use mp4, webm, mov, or mkv (short clips; max upload size applies)."
+        )
+    frames = _video_bytes_to_pil_frames(data, name)
+    if not frames:
+        raise ValueError(
+            "Could not read video frames. Try a shorter clip, H.264/AAC MP4, or use a photo instead."
+        )
+    return frames, "video"
+
+
 @app.route("/analyze-image", methods=["POST"])
 def analyze_image():
-    """Multimodal: photo + optional text. Requires GEMINI_API_KEY. Demo citation tool only."""
+    """Multimodal: photo or short video + optional text. Requires GEMINI_API_KEY. Demo citation tool only."""
     if not gemini_ok():
         return (
             jsonify(
                 {
-                    "error": "Set GEMINI_API_KEY for photo analysis.",
+                    "error": "Set GEMINI_API_KEY for photo or video analysis.",
                     "disclaimer": MULTIMODAL_DEMO_DISCLAIMER,
                 }
             ),
@@ -925,20 +1026,19 @@ def analyze_image():
     f = request.files["image"]
     if not f or not f.filename:
         return jsonify({"error": "Empty upload."}), 400
-    from PIL import Image as PILImage
-
-    data = f.read()
-    try:
-        img = PILImage.open(io.BytesIO(data))
-        img.load()
-    except Exception as e:
-        return jsonify({"error": f"Could not read image: {e}"}), 400
     question = (request.form.get("question") or "").strip() or (
         "Check this pile for recycling contamination. If clearly contaminated, call issue_dsny_citation "
         "with best-guess district, contamination_type, and address."
     )
     try:
-        out = run_multimodal_analysis(img, question)
+        media, kind = _load_media_for_multimodal(f)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        out = run_multimodal_analysis(media, question)
+        out["media_kind"] = kind
+        if kind == "video" and isinstance(media, list):
+            out["video_frames_used"] = len(media)
         return jsonify(out)
     except Exception as e:
         return jsonify({"error": str(e), "disclaimer": MULTIMODAL_DEMO_DISCLAIMER}), 500

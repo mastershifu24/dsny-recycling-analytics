@@ -241,16 +241,16 @@
     </section>
 
     <section class="card" aria-labelledby="photo-h">
-      <h2 id="photo-h">Photo check (demo)</h2>
+      <h2 id="photo-h">Photo or video check (demo)</h2>
       <p class="hint" style="margin:0 0 0.5rem">
-        Needs <code>GEMINI_API_KEY</code> on the server. Any “citation” is a <strong>stub</strong>, not a real ticket.
+        Needs <code>GEMINI_API_KEY</code> on the server. Short videos: we sample a few frames for analysis. Any “citation” is a <strong>stub</strong>, not a real ticket or fine history.
       </p>
-      <label for="photoInput">Choose a photo</label>
-      <input type="file" id="photoInput" accept="image/*" />
+      <label for="photoInput">Choose a photo or short video</label>
+      <input type="file" id="photoInput" accept="image/*,video/*" />
       <label for="photoQ">Optional note</label>
       <p class="hint">e.g. check this pile for recycling contamination</p>
-      <textarea id="photoQ" placeholder="Short note to send with the image…"></textarea>
-      <button type="button" id="photoBtn">Analyze photo</button>
+      <textarea id="photoQ" placeholder="Short note to send with the image or video…"></textarea>
+      <button type="button" id="photoBtn">Analyze photo or video</button>
     </section>
 
     <section class="card" aria-labelledby="text-h">

@@ -117,11 +117,12 @@
     photoBtn.addEventListener("click", async () => {
       const file = photoInput.files && photoInput.files[0];
       if (!file) {
-        setResult("Choose a photo first.", true);
+        setResult("Choose a photo or video first.", true);
         return;
       }
       transcriptP.textContent = "";
-      setResult("Analyzing photo…", false);
+      const isVid = file.type && file.type.startsWith("video/");
+      setResult(isVid ? "Analyzing video (sampling frames)…" : "Analyzing photo…", false);
       const fd = new FormData();
       fd.append("image", file);
       if (photoQ && photoQ.value.trim()) {
@@ -138,6 +139,13 @@
           return;
         }
         let out = data.answer || "";
+        if (data.media_kind === "video" && data.video_frames_used) {
+          out =
+            "[Video: used " +
+            data.video_frames_used +
+            " sampled frames]\n\n" +
+            out;
+        }
         if (data.disclaimer) {
           out += "\n\n" + data.disclaimer;
         }
