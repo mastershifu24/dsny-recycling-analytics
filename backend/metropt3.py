@@ -1,5 +1,5 @@
 """
-MetroPT-3 predictive maintenance — RBF SVM only (synthetic MetroPT-style data).
+MetroPT-3 predictive maintenance — linear-kernel SVM (fast; synthetic MetroPT-style data).
 Used by GET/POST /api/metropt3/*; optional Gemini interpretation via GEMINI_API_KEY.
 """
 
@@ -17,7 +17,7 @@ from sklearn.metrics import classification_report, confusion_matrix, roc_auc_sco
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 
 FEATURE_COLS = [
     "Oil_temperature",
@@ -42,6 +42,17 @@ FEATURE_LABELS = {
 }
 
 _bundle: Optional[dict[str, Any]] = None
+
+# Synthetic demo: overlapping classes + ambiguous band + label noise → holdout metrics below 1.0.
+# Core normal/failure counts match (≈50/50 before noise); ambiguous band is exactly half/half labels.
+# LinearSVC scales to large n; RBF SVC was too slow for cold start.
+_DATASET_N_NORMAL = 1500
+_DATASET_N_FAILURE = 1500
+_DATASET_N_AMBIGUOUS = 400
+_LABEL_NOISE_RATE = 0.092
+_SVM_C = 0.85
+_CV_SPLITS = 3
+_KERNEL = "linear"
 
 # Defaults when user only pastes a subset of sensors (matches training scale)
 _DEFAULT_READINGS: dict[str, Any] = {
@@ -239,35 +250,50 @@ def metropt3_paste_operator_fallback(ctx: dict[str, Any], pred: dict[str, Any]) 
 
 
 def load_dataset() -> pd.DataFrame:
+    """
+    Synthetic MetroPT-style table: heavily overlapping continuous features, similar digital priors,
+    an ambiguous operating band (features barely informative of label), and registry-style noise.
+    Class counts are balanced before label flips (normal == failure; ambiguous split 50/50).
+    Designed so a holdout linear-SVM does not reach AUC=1 / perfect confusion matrix.
+    """
     rng = np.random.default_rng(42)
-    normal = pd.DataFrame(
-        {
-            "Oil_temperature": rng.normal(70, 5, 500),
-            "Motor_current": rng.normal(5, 1.5, 500),
-            "COMP": rng.choice([0, 1], 500, p=[0.2, 0.8]),
-            "TP2": rng.normal(9, 1, 500),
-            "TP3": rng.normal(9, 1, 500),
-            "H1": rng.normal(0.1, 0.05, 500),
-            "LPS": np.zeros(500),
-            "Oil_level": np.ones(500),
-            "Status": 0,
-        }
-    )
-    failure = pd.DataFrame(
-        {
-            "Oil_temperature": rng.normal(95, 8, 150),
-            "Motor_current": rng.normal(12, 3, 150),
-            "COMP": np.ones(150),
-            "TP2": rng.normal(4, 1.5, 150),
-            "TP3": rng.normal(8, 2, 150),
-            "H1": rng.normal(0.8, 0.2, 150),
-            "LPS": rng.choice([0, 1], 150, p=[0.7, 0.3]),
-            "Oil_level": rng.choice([0, 1], 150, p=[0.4, 0.6]),
-            "Status": 1,
-        }
-    )
-    df = pd.concat([normal, failure], ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+    n0, n1, na = _DATASET_N_NORMAL, _DATASET_N_FAILURE, _DATASET_N_AMBIGUOUS
+
+    def _block(n: int, mean_shift: float) -> pd.DataFrame:
+        """Shared generator; small mean_shift separates classes only slightly (large overlap)."""
+        return pd.DataFrame(
+            {
+                "Oil_temperature": np.clip(rng.normal(78.0 + mean_shift * 5.5, 14.5, n), 20.0, 120.0),
+                "Motor_current": np.clip(rng.normal(7.2 + mean_shift * 1.8, 4.2, n), 0.0, 25.0),
+                "COMP": rng.choice([0, 1], n, p=[0.26, 0.74]),
+                "TP2": np.clip(rng.normal(7.4 + mean_shift * 0.9, 3.4, n), 0.0, 15.0),
+                "TP3": np.clip(rng.normal(8.0 + mean_shift * 0.55, 3.0, n), 0.0, 15.0),
+                "H1": np.clip(rng.normal(0.32 + mean_shift * 0.12, 0.38, n), 0.0, 2.0),
+                "LPS": rng.choice([0, 1], n, p=[0.76, 0.24]),
+                "Oil_level": rng.choice([0, 1], n, p=[0.16, 0.84]),
+            }
+        )
+
+    normal = _block(n0, mean_shift=-0.35)
+    normal["Status"] = 0
+    failure = _block(n1, mean_shift=0.55)
+    failure["Status"] = 1
+    # Same feature law as mid-shift; labels balanced 0/1 (not random Bernoulli — avoids skew).
+    amb = _block(na, mean_shift=0.12)
+    half = na // 2
+    amb_labels = np.concatenate([np.zeros(half, dtype=np.int64), np.ones(na - half, dtype=np.int64)])
+    rng.shuffle(amb_labels)
+    amb["Status"] = amb_labels
+
+    df = pd.concat([normal, failure, amb], ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
+    flip = rng.random(len(df)) < _LABEL_NOISE_RATE
+    df.loc[flip, "Status"] = 1 - df.loc[flip, "Status"].astype(int)
     return df
+
+
+def _sigmoid(z: float) -> float:
+    z = max(-50.0, min(50.0, float(z)))
+    return float(1.0 / (1.0 + np.exp(-z)))
 
 
 def train_svm(df: pd.DataFrame) -> dict[str, Any]:
@@ -281,12 +307,11 @@ def train_svm(df: pd.DataFrame) -> dict[str, Any]:
             ("scaler", StandardScaler()),
             (
                 "svm",
-                SVC(
-                    kernel="rbf",
-                    C=10,
-                    gamma="scale",
+                LinearSVC(
+                    C=_SVM_C,
                     class_weight="balanced",
-                    probability=True,
+                    dual=False,
+                    max_iter=8000,
                     random_state=42,
                 ),
             ),
@@ -295,21 +320,23 @@ def train_svm(df: pd.DataFrame) -> dict[str, Any]:
     pipe.fit(X_tr, y_tr)
 
     y_pred = pipe.predict(X_te)
-    y_prob = pipe.predict_proba(X_te)[:, 1]
+    y_score = pipe.decision_function(X_te)
 
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(pipe, X, y, cv=cv, scoring="roc_auc")
+    cv = StratifiedKFold(n_splits=_CV_SPLITS, shuffle=True, random_state=42)
+    cv_scores = cross_val_score(
+        pipe, X, y, cv=cv, scoring="roc_auc", n_jobs=-1
+    )
 
     report = classification_report(y_te, y_pred, output_dict=True)
     cm = confusion_matrix(y_te, y_pred)
-    auc = float(roc_auc_score(y_te, y_prob))
+    auc = float(roc_auc_score(y_te, y_score))
 
     svm_ = pipe.named_steps["svm"]
-    sv_coef = svm_.dual_coef_
-    sv_vecs = svm_.support_vectors_
-    w_approx = (sv_coef @ sv_vecs).flatten()
+    w_approx = svm_.coef_.flatten()
     w_norm = w_approx / (np.abs(w_approx).sum() + 1e-9)
 
+    n0 = int((y == 0).sum())
+    n1 = int((y == 1).sum())
     return {
         "pipeline": pipe,
         "report": report,
@@ -318,6 +345,10 @@ def train_svm(df: pd.DataFrame) -> dict[str, Any]:
         "cv_mean": float(cv_scores.mean()),
         "cv_std": float(cv_scores.std()),
         "feat_weights": dict(zip(FEATURE_COLS, w_norm.tolist())),
+        "n_samples": int(len(X)),
+        "class_counts": {"normal": n0, "failure": n1},
+        "svm_C": _SVM_C,
+        "kernel": _KERNEL,
     }
 
 
@@ -325,10 +356,8 @@ def _contrib_for_row(pipe: Pipeline, input_row: pd.DataFrame) -> dict[str, float
     scaler = pipe.named_steps["scaler"]
     svm_ = pipe.named_steps["svm"]
     xs = scaler.transform(input_row).flatten()
-    sv_coef = svm_.dual_coef_
-    sv_vecs = svm_.support_vectors_
-    w_approx = (sv_coef @ sv_vecs).flatten()
-    return {FEATURE_COLS[j]: round(float(w_approx[j] * xs[j]), 4) for j in range(len(FEATURE_COLS))}
+    w = svm_.coef_.flatten()
+    return {FEATURE_COLS[j]: round(float(w[j] * xs[j]), 4) for j in range(len(FEATURE_COLS))}
 
 
 def get_bundle() -> dict[str, Any]:
@@ -353,12 +382,9 @@ def predict_from_row(row: dict[str, Any]) -> dict[str, Any]:
     pipe = b["svm"]["pipeline"]
     input_row = row_dict_to_df(row)
     pred = int(pipe.predict(input_row)[0])
-    prob = float(pipe.predict_proba(input_row)[0, 1])
+    dec = float(pipe.decision_function(input_row)[0])
+    prob = _sigmoid(dec)
     contribs = _contrib_for_row(pipe, input_row)
-    try:
-        dec = float(pipe.decision_function(input_row)[0])
-    except Exception:
-        dec = None
     return {
         "class": pred,
         "class_label": "Failure" if pred == 1 else "Normal",
@@ -404,11 +430,21 @@ def metropt3_chat_context() -> dict[str, Any]:
     fw = svm_pkg["feat_weights"]
     top_feats = sorted(fw.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
 
+    df = b["df"]
+    n_tot = len(df)
+    n_ok = int((df["Status"] == 0).sum())
+    n_bad = int((df["Status"] == 1).sum())
     return {
         "domain": "MetroPT-3 synthetic train air-production unit (demo—not live DSNY truck telemetry)",
-        "dataset": {"total": 650, "normal": 500, "failure": 150},
+        "dataset": {
+            "total": n_tot,
+            "normal": n_ok,
+            "failure": n_bad,
+            "normal_pct": round(100.0 * n_ok / n_tot, 1) if n_tot else 0.0,
+            "failure_pct": round(100.0 * n_bad / n_tot, 1) if n_tot else 0.0,
+        },
         "svm_model": {
-            "type": "RBF SVM (class-balanced), only model in this demo",
+            "type": "Linear-kernel SVM (class-balanced), only model in this demo",
             "roc_auc_holdout": round(float(svm_pkg["auc"]), 4),
             "roc_auc_cv_5fold_mean": round(float(svm_pkg["cv_mean"]), 4),
             "roc_auc_cv_5fold_std": round(float(svm_pkg["cv_std"]), 4),
@@ -435,8 +471,8 @@ def metropt3_fallback_answer_text(ctx: dict[str, Any]) -> str:
     return (
         "Predictive maintenance demo (MetroPT-3 style synthetic sensors on an air-production unit). "
         "This is not live DSNY truck telematics.\n\n"
-        f"Model: RBF SVM only — ROC-AUC {s['roc_auc_holdout']:.3f} on holdout; "
-        f"5-fold CV ROC-AUC {s['roc_auc_cv_5fold_mean']:.3f} ± {s['roc_auc_cv_5fold_std']:.3f}; "
+        f"Model: linear-kernel SVM only — ROC-AUC {s['roc_auc_holdout']:.3f} on holdout; "
+        f"{_CV_SPLITS}-fold CV ROC-AUC {s['roc_auc_cv_5fold_mean']:.3f} ± {s['roc_auc_cv_5fold_std']:.3f}; "
         f"macro F1 {s['macro_f1']:.3f}; failure recall {s['failure_recall']:.3f}, precision {s['failure_precision']:.3f}.\n"
         f"Largest |weight| SVM features (approx.): {top_s}.\n"
         f"Test confusion matrix [[TN, FP],[FN, TP]]: {s['confusion_matrix_test']}. {s['confusion_note']}.\n\n"
@@ -460,13 +496,21 @@ def build_gemini_prompt(
 ) -> str:
     rep = svm_metrics["report"]
     feat = svm_metrics["feat_weights"]
+    n_tot = int(svm_metrics.get("n_samples", 0))
+    cc = svm_metrics.get("class_counts") or {}
+    n0 = int(cc.get("normal", 0))
+    n1 = int(cc.get("failure", 0))
+    p0 = 100.0 * n0 / n_tot if n_tot else 0.0
+    p1 = 100.0 * n1 / n_tot if n_tot else 0.0
+    c_svm = float(svm_metrics.get("svm_C", _SVM_C))
+    kern = str(svm_metrics.get("kernel", _KERNEL))
 
     return textwrap.dedent(
         f"""
     You are a senior reliability engineer interpreting predictive-maintenance
     diagnostics for the MetroPT-3 train air-production unit dataset.
 
-    The ONLY classifier in this pipeline is an RBF kernel SVM (balanced classes).
+    The ONLY classifier in this pipeline is a linear-kernel SVM (balanced classes).
 
     Speak in clear, technical but accessible English. Structure your response as
     two short paragraphs plus a third if sensor data is provided:
@@ -475,20 +519,20 @@ def build_gemini_prompt(
       3. Current sensor reading interpretation (if provided)
 
     ── DATASET CONTEXT ─────────────────────────────────────────────────────
-    Records: 650  |  Normal: 500 (76.9 %)  |  Failure: 150 (23.1 %)
+    Records: {n_tot}  |  Normal: {n0} ({p0:.1f} %)  |  Failure: {n1} ({p1:.1f} %)
     Features: Oil temperature, Motor current, Compressor flag (COMP),
               TP2 pressure, TP3 pressure, H1 pressure drop,
               Low-pressure switch (LPS), Oil level.
 
     ── SVM MODEL PERFORMANCE ───────────────────────────────────────────────
-    Kernel         : RBF  |  C=10  |  class_weight=balanced
+    Kernel         : {kern}  |  C={c_svm:g}  |  class_weight=balanced
     ROC-AUC        : {svm_metrics["auc"]:.4f}
-    CV ROC-AUC     : {svm_metrics["cv_mean"]:.4f} ± {svm_metrics["cv_std"]:.4f}  (5-fold)
+    CV ROC-AUC     : {svm_metrics["cv_mean"]:.4f} ± {svm_metrics["cv_std"]:.4f}  ({_CV_SPLITS}-fold)
     Precision-0    : {rep["0"]["precision"]:.3f}   Recall-0 : {rep["0"]["recall"]:.3f}
     Precision-1    : {rep["1"]["precision"]:.3f}   Recall-1 : {rep["1"]["recall"]:.3f}
     Macro F1       : {rep["macro avg"]["f1-score"]:.3f}
 
-    Feature weights (approximate, from SVM dual coefficients, L1-normalized):
+    Feature weights (approximate, linear SVM coefficients, L1-normalized):
     {json.dumps({k: round(v, 4) for k, v in sorted(feat.items(), key=lambda x: abs(x[1]), reverse=True)}, indent=2)}
     Positive weight → pushes toward failure.
     Negative weight → pushes toward normal.

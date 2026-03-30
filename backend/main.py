@@ -1133,7 +1133,7 @@ def ask():
             ctx, fb = metropt3_for_ask()
             label = (
                 "metropt3_predictive_maintenance: synthetic air-unit demo (not live DSNY fleet telemetry). "
-                "Summarize RBF SVM metrics (ROC-AUC, CV, F1, confusion matrix, top feature weights) "
+                "Summarize linear-kernel SVM metrics (ROC-AUC, CV, F1, confusion matrix, top feature weights) "
                 "and both scenario_predictions (failure probability for healthy-style vs stressed-style sensors). "
                 "State clearly this is demo / synthetic training data."
             )

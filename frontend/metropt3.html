@@ -205,7 +205,7 @@ a.nav-back:hover{text-decoration:underline}
     <span style="font-size:11px;color:var(--mut);font-family:'JetBrains Mono',monospace">v2.1 · API</span>
     <a class="nav-back" href="/">← DSNY Recycling Analytics</a>
   </div>
-  <div class="hdr-sub">RBF SVM · Truck-style oil temp, motor load, pressures &amp; levels (synthetic demo) — <code>/api/metropt3/*</code></div>
+  <div class="hdr-sub">Linear-kernel SVM (fast) · Truck-style oil temp, motor load, pressures &amp; levels (synthetic demo) — <code>/api/metropt3/*</code></div>
   <div id="banner"></div>
   <div class="tabs">
     <button class="tab on" onclick="sw('eda',this)">EDA</button>
@@ -591,7 +591,7 @@ async function rp() {
       rf.style.width = risk + '%';
       rf.style.background = risk >= 60 ? PAL.bad : risk >= 30 ? PAL.warn : PAL.ok;
       const sb = document.getElementById('sbox');
-      if (risk >= 60) { sb.className = 'sbox sdan'; sb.innerHTML = '<strong>Failure risk high</strong> — RBF SVM probability elevated.'; }
+      if (risk >= 60) { sb.className = 'sbox sdan'; sb.innerHTML = '<strong>Failure risk high</strong> — SVM score elevated (sigmoid of margin).'; }
       else if (risk >= 30) { sb.className = 'sbox swarn'; sb.innerHTML = '<strong>Elevated risk</strong> — near decision boundary.'; }
       else { sb.className = 'sbox sok'; sb.innerHTML = '<strong>Normal region</strong> — reading consistent with training class 0.'; }
 
