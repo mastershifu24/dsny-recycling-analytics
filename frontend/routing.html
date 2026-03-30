@@ -72,7 +72,7 @@
     </ul>
   </div>
 
-  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> — <code>use_google_traffic</code>, <code>traffic_model</code>, <code>truck_aware</code>, <code>use_osrm</code>, <code>use_district_priority</code>, <code>district_priority_strength</code> (0–1).</p>
+  <p class="muted"><strong>API:</strong> <code>POST /api/route/optimize</code> — same flags plus optional <code>constraints</code> object: <code>start_facility</code> / <code>end_facility</code> (<code>lat</code>, <code>lng</code>, <code>label</code>), <code>service_type_switch_penalty_sec</code>, per-stop <code>service_type</code> (refuse/recycling/organics/mixed), <code>missed_prior_visit</code>, <code>shift_max_seconds</code>, <code>default_service_seconds</code>. Fast weighted-greedy planning—not dispatch.</p>
 
   <script>
     function _el(id) { return document.getElementById(id); }

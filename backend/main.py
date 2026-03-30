@@ -700,18 +700,18 @@ def routing_links_page():
     return send_from_directory(FRONTEND_DIR, "routing.html")
 
 
-@app.route("/api/route/optimize", methods=["POST"])
-def api_route_optimize():
-    """Order stops by nearest-neighbor (Google traffic matrix, OSRM, or Haversine)."""
+def _execute_route_optimize(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Shared body for POST /api/route/optimize and GET with ?stops=.... Returns (body, status)."""
     try:
         from route_optimize import optimize_route_stops
     except ImportError as e:
-        return jsonify({"error": str(e)}), 503
+        return {"error": str(e)}, 503
 
-    payload = request.get_json(silent=True) or {}
     stops = payload.get("stops")
     if not isinstance(stops, list):
-        return jsonify({"error": "JSON body must include 'stops': [ { lat, lng, label? }, ... ]"}), 400
+        return {
+            "error": "JSON body must include 'stops': [ { lat, lng, label? }, ... ]",
+        }, 400
     start = int(payload.get("start_index", 0) or 0)
     use_osrm = payload.get("use_osrm", True)
     if isinstance(use_osrm, str):
@@ -721,12 +721,10 @@ def api_route_optimize():
         use_google_traffic = use_google_traffic.lower() in ("1", "true", "yes")
     gkey = os.environ.get("GOOGLE_MAPS_API_KEY", "").strip()
     if use_google_traffic and not gkey:
-        return jsonify(
-            {
-                "error": "Live traffic requires GOOGLE_MAPS_API_KEY in .env. Enable Routes API + "
-                "(fallback) Distance Matrix + Directions in Google Cloud."
-            }
-        ), 400
+        return {
+            "error": "Live traffic requires GOOGLE_MAPS_API_KEY in .env. Enable Routes API + "
+            "(fallback) Distance Matrix + Directions in Google Cloud."
+        }, 400
     traffic_model = (payload.get("traffic_model") or "best_guess").strip().lower()
     if traffic_model not in ("best_guess", "pessimistic", "optimistic"):
         traffic_model = "best_guess"
@@ -746,6 +744,10 @@ def api_route_optimize():
     except (TypeError, ValueError):
         dps = 0.45
 
+    cons = payload.get("constraints")
+    if not isinstance(cons, dict):
+        cons = None
+
     try:
         out = optimize_route_stops(
             stops,
@@ -760,12 +762,100 @@ def api_route_optimize():
             avoid_ferries=_bool_opt("avoid_ferries"),
             use_district_priority=use_district_priority,
             district_priority_strength=dps,
+            constraints=cons,
         )
-        return jsonify(out)
+        return out, 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return {"error": str(e)}, 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}, 500
+
+
+def _stops_from_get_arg(raw: str) -> Optional[list[dict[str, Any]]]:
+    """Parse stops=lat,lng|lat,lng from query string."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    out: list[dict[str, Any]] = []
+    for part in raw.split("|"):
+        part = part.strip()
+        if not part:
+            continue
+        bits = [b.strip() for b in part.split(",")]
+        if len(bits) < 2:
+            return None
+        try:
+            lat = float(bits[0])
+            lng = float(bits[1])
+        except (TypeError, ValueError):
+            return None
+        stop: dict[str, Any] = {"lat": lat, "lng": lng}
+        if len(bits) >= 3 and bits[2]:
+            stop["label"] = bits[2]
+        out.append(stop)
+    return out if len(out) >= 1 else None
+
+
+@app.route("/api/route/optimize", methods=["GET", "POST"])
+def api_route_optimize():
+    """Order stops by nearest-neighbor (Google traffic matrix, OSRM, or Haversine).
+
+    POST: JSON body (primary). GET: no ?stops= → help JSON; ?stops=lat,lng|lat,lng → same as POST (browser-safe).
+    """
+    if request.method == "GET":
+        q_stops = request.args.get("stops", "").strip()
+        if not q_stops:
+            base = request.url_root.rstrip("/")
+            return jsonify(
+                {
+                    "message": "Send POST with JSON, or GET with ?stops=lat,lng|lat,lng (pipe-separated).",
+                    "post": {
+                        "url": f"{base}/api/route/optimize",
+                        "content_type": "application/json",
+                        "body_example": {
+                            "stops": [
+                                {"lat": 40.758, "lng": -73.9855, "label": "A"},
+                                {"lat": 40.7484, "lng": -73.9857, "label": "B"},
+                            ],
+                            "use_osrm": False,
+                        },
+                    },
+                    "get_example": (
+                        f"{base}/api/route/optimize?stops=40.758,-73.9855|40.7484,-73.9857&use_osrm=false"
+                    ),
+                    "web_ui": f"{base}/routing",
+                }
+            )
+        payload: dict[str, Any] = {}
+        parsed = _stops_from_get_arg(q_stops)
+        if parsed is None:
+            return jsonify(
+                {
+                    "error": "Invalid stops. Use pipe-separated lat,lng pairs, e.g. "
+                    "stops=40.758,-73.9855|40.7484,-73.9857"
+                }
+            ), 400
+        payload["stops"] = parsed
+        for key in (
+            "start_index",
+            "use_osrm",
+            "use_google_traffic",
+            "traffic_model",
+            "truck_aware",
+            "avoid_tolls",
+            "avoid_highways",
+            "avoid_ferries",
+            "use_district_priority",
+            "district_priority_strength",
+        ):
+            if key in request.args:
+                payload[key] = request.args.get(key)
+        body, status = _execute_route_optimize(payload)
+        return jsonify(body), status
+
+    payload = request.get_json(silent=True) or {}
+    body, status = _execute_route_optimize(payload)
+    return jsonify(body), status
 
 
 @app.route("/analytics/summary", methods=["GET"])

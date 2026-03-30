@@ -202,6 +202,8 @@ GOOGLE_ROUTES_MATRIX = "https://routes.googleapis.com/distanceMatrix/v2:computeR
 GOOGLE_ROUTES_COMPUTE = "https://routes.googleapis.com/directions/v2:computeRoutes"
 
 TRAFFIC_MODELS = frozenset({"best_guess", "pessimistic", "optimistic"})
+SERVICE_TYPES = frozenset({"refuse", "recycling", "organics", "mixed"})
+SODA_TONNAGE_PAGE = "https://data.cityofnewyork.us/d/ebb7-mvp5"
 
 TRAFFIC_MODEL_GOOGLE = {
     "best_guess": "BEST_GUESS",
@@ -257,6 +259,20 @@ def _validate_stop(s: dict[str, Any], idx: int) -> dict[str, Any]:
     if cd is not None and str(cd).strip() != "":
         try:
             out["community_district"] = int(float(cd))
+        except (TypeError, ValueError):
+            pass
+    st = s.get("service_type")
+    if st is not None and str(st).strip():
+        t = str(st).strip().lower()
+        out["service_type"] = t if t in SERVICE_TYPES else "mixed"
+    else:
+        out["service_type"] = "mixed"
+    if s.get("missed_prior_visit"):
+        out["missed_prior_visit"] = True
+    ss = s.get("service_seconds")
+    if ss is not None and str(ss).strip() != "":
+        try:
+            out["service_seconds"] = max(0, int(float(ss)))
         except (TypeError, ValueError):
             pass
     return out
@@ -636,6 +652,144 @@ def nearest_neighbor_order(
     return order
 
 
+def _parse_light_constraints(c: Optional[dict[str, Any]]) -> dict[str, Any]:
+    """Fast planning knobs—no external solvers."""
+    c = c or {}
+    sm = c.get("shift_max_seconds")
+    if sm is not None and str(sm).strip() != "":
+        try:
+            sm = float(sm)
+        except (TypeError, ValueError):
+            sm = None
+    else:
+        sm = None
+    try:
+        dss = int(float(c.get("default_service_seconds", 120) or 120))
+    except (TypeError, ValueError):
+        dss = 120
+    dss = max(0, dss)
+    try:
+        pen = float(c.get("service_type_switch_penalty_sec", 0) or 0)
+    except (TypeError, ValueError):
+        pen = 0.0
+    try:
+        missed_boost = float(c.get("missed_priority_boost", 0.35) or 0.35)
+    except (TypeError, ValueError):
+        missed_boost = 0.35
+    return {
+        "start_facility": c.get("start_facility"),
+        "end_facility": c.get("end_facility"),
+        "service_type_switch_penalty_sec": max(0.0, pen),
+        "missed_priority_boost": max(0.0, missed_boost),
+        "shift_max_seconds": sm,
+        "default_service_seconds": dss,
+    }
+
+
+def _facility_stop(d: Any, role: str) -> dict[str, Any]:
+    if not isinstance(d, dict):
+        raise ValueError(f"{role} must be an object with lat, lng")
+    try:
+        lat = float(d.get("lat"))
+        lng = float(d.get("lng"))
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"{role}: need numeric lat and lng") from e
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise ValueError(f"{role}: lat/lng out of range")
+    lab = str(d.get("label") or role.replace("_", " "))
+    return {"lat": lat, "lng": lng, "label": lab, "role": role}
+
+
+def _service_key(stop: dict[str, Any]) -> str:
+    t = stop.get("service_type") or "mixed"
+    return t if t in SERVICE_TYPES else "mixed"
+
+
+def _apply_service_switch_penalty(
+    matrix: list[list[float]], stops: list[dict[str, Any]], penalty_sec: float
+) -> None:
+    if penalty_sec <= 0:
+        return
+    n = len(stops)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            ai, aj = _service_key(stops[i]), _service_key(stops[j])
+            if ai == "mixed" or aj == "mixed" or ai == aj:
+                continue
+            matrix[i][j] += penalty_sec
+
+
+def _missed_multipliers(stops: list[dict[str, Any]], boost: float) -> list[float]:
+    return [1.0 + (boost if s.get("missed_prior_visit") else 0.0) for s in stops]
+
+
+def _combine_multipliers(
+    district: Optional[list[float]], missed: list[float],
+) -> list[float]:
+    n = len(missed)
+    out: list[float] = []
+    for j in range(n):
+        a = district[j] if district is not None and j < len(district) else 1.0
+        out.append(a * missed[j])
+    return out
+
+
+def _per_stop_service_seconds(stops: list[dict[str, Any]], default_sec: int) -> list[float]:
+    out: list[float] = []
+    for s in stops:
+        if "service_seconds" in s:
+            out.append(float(s["service_seconds"]))
+        else:
+            out.append(float(default_sec))
+    return out
+
+
+def _shift_segments(
+    order: list[int],
+    matrix: list[list[float]],
+    stops: list[dict[str, Any]],
+    service_sec: list[float],
+    shift_max: float,
+) -> list[dict[str, Any]]:
+    """Greedy split of one tour into shift-sized chunks (planning only)."""
+    if shift_max is None or shift_max <= 0:
+        return []
+    segs: list[dict[str, Any]] = []
+    cur: list[int] = []
+    cum = 0.0
+    for k in range(len(order)):
+        idx = order[k]
+        if not cur:
+            cum += service_sec[idx]
+            cur.append(idx)
+            continue
+        prev = cur[-1]
+        leg = matrix[prev][idx]
+        travel_plus = leg + service_sec[idx]
+        if cum + travel_plus > shift_max and cur:
+            segs.append(
+                {
+                    "stop_indices": cur[:],
+                    "approx_elapsed_sec": round(cum, 1),
+                }
+            )
+            cur = [idx]
+            cum = float(service_sec[idx])
+        else:
+            cum += travel_plus
+            cur.append(idx)
+    if cur:
+        segs.append(
+            {
+                "stop_indices": cur[:],
+                "approx_elapsed_sec": round(cum, 1),
+            }
+        )
+    return segs
+
+
 def google_maps_directions_url(stops: list[dict[str, Any]]) -> str:
     segs = [f"{s['lat']},{s['lng']}" for s in stops]
     return "https://www.google.com/maps/dir/" + "/".join(segs)
@@ -655,6 +809,7 @@ def optimize_route_stops(
     avoid_ferries: bool = False,
     use_district_priority: bool = False,
     district_priority_strength: float = 0.45,
+    constraints: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     if not raw_stops:
         raise ValueError("Provide at least one stop")
@@ -665,10 +820,21 @@ def optimize_route_stops(
     if tm not in TRAFFIC_MODELS:
         tm = "best_guess"
 
+    lc = _parse_light_constraints(constraints)
     stops = [_validate_stop(s, i) for i, s in enumerate(raw_stops)]
     gkey = (google_maps_api_key or os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip() or None
 
-    if len(stops) == 1:
+    sf: Optional[dict[str, Any]] = None
+    ef: Optional[dict[str, Any]] = None
+    if lc["start_facility"]:
+        sf = _facility_stop(lc["start_facility"], "start_facility")
+    if lc["end_facility"]:
+        ef = _facility_stop(lc["end_facility"], "end_facility")
+
+    nn_stops: list[dict[str, Any]] = ([sf] if sf else []) + stops
+    nn_start = 0 if sf else int(start_index)
+
+    if len(stops) == 1 and not sf and not ef:
         out: dict[str, Any] = {
             "ordered_stops": stops,
             "order_indices": [0],
@@ -682,21 +848,64 @@ def optimize_route_stops(
             "truck_profile_applied": truck_aware,
             "disclaimer": "Only one stop; nothing to reorder.",
             "district_priority": {"enabled": False, "skipped": "single stop"},
+            "planning": {
+                "purpose": "education_what_if",
+                "solver": "weighted_greedy",
+                "note": "Not DSNY dispatch—planning sketch only.",
+            },
+            "constraints_applied": {k: v for k, v in lc.items() if v not in (None, "", 0, 0.0)},
         }
         if truck_aware:
             out["nyc_truck_resources"] = NYC_TRUCK_RESOURCES
             out["disclaimer"] += " NYC DOT truck-route compliance is not validated by this tool."
         return out
 
+    if len(nn_stops) < 2 and ef:
+        u = nn_stops[0]
+        ef_s = ef
+        assert ef_s is not None
+        km = haversine_km(u["lat"], u["lng"], ef_s["lat"], ef_s["lng"])
+        leg = (km / FALLBACK_KMH) * 3600.0
+        pair = [u, ef_s]
+        return {
+            "ordered_stops": pair,
+            "order_indices": [0],
+            "matrix_kind": "haversine_fallback",
+            "total_edge_duration_sec": round(leg, 1),
+            "route_duration_sec": round(leg, 1),
+            "route_distance_m": None,
+            "google_maps_url": google_maps_directions_url(pair),
+            "traffic_model": tm,
+            "live_traffic": False,
+            "google_traffic_engine": None,
+            "truck_profile_applied": truck_aware,
+            "disclaimer": (
+                "One collection stop plus end facility; no reordering. "
+                "Education / planning only—not DSNY dispatch."
+            ),
+            "district_priority": {"enabled": False, "skipped": "single leg"},
+            "planning": {
+                "purpose": "education_what_if",
+                "solver": "weighted_greedy",
+            },
+            "constraints_applied": {k: v for k, v in lc.items() if v not in (None, "", 0, 0.0)},
+            "shift_segments": [],
+        }
+
+    if len(nn_stops) < 2:
+        raise ValueError("Need at least two nodes to reorder (or one stop + end_facility).")
+    if not sf and (nn_start < 0 or nn_start >= len(nn_stops)):
+        raise ValueError("start_index out of range")
+
     matrix_kind = "haversine_fallback"
     google_engine: Optional[str] = None
-    matrix = haversine_duration_matrix(stops)
+    matrix = haversine_duration_matrix(nn_stops)
     used_google = False
 
     if use_google_traffic and gkey:
         try:
             matrix, google_engine = google_routes_v2_matrix(
-                stops,
+                nn_stops,
                 gkey,
                 tm,
                 truck_aware=truck_aware,
@@ -708,17 +917,17 @@ def optimize_route_stops(
             used_google = True
         except (requests.RequestException, RuntimeError, KeyError, ValueError, TypeError, json.JSONDecodeError):
             try:
-                matrix = google_traffic_matrix_legacy(stops, gkey, tm)
+                matrix = google_traffic_matrix_legacy(nn_stops, gkey, tm)
                 matrix_kind = "google_distance_matrix_legacy_traffic"
                 google_engine = matrix_kind
                 used_google = True
             except (requests.RequestException, RuntimeError, KeyError, ValueError, TypeError):
                 matrix_kind = "haversine_fallback_after_google_error"
-                matrix = haversine_duration_matrix(stops)
+                matrix = haversine_duration_matrix(nn_stops)
 
     if not used_google and use_osrm:
         try:
-            matrix = osrm_duration_matrix(stops)
+            matrix = osrm_duration_matrix(nn_stops)
             matrix_kind = "osrm_driving_duration"
         except (requests.RequestException, RuntimeError, KeyError, ValueError):
             if matrix_kind == "haversine_fallback":
@@ -726,10 +935,16 @@ def optimize_route_stops(
             else:
                 matrix_kind = matrix_kind + "_osrm_failed"
 
+    work = [row[:] for row in matrix]
+    _apply_service_switch_penalty(work, nn_stops, lc["service_type_switch_penalty_sec"])
+
     priority_block: dict[str, Any] = {"enabled": bool(use_district_priority)}
+    if use_district_priority:
+        priority_block["soda_resource_url"] = SODA_TONNAGE_PAGE
+        priority_block["garbage_tons_field"] = _garbage_tons_field()
     dest_mult: Optional[list[float]] = None
     if use_district_priority:
-        any_cd = any(stop_district_key(s) for s in stops)
+        any_cd = any(stop_district_key(s) for s in nn_stops)
         if any_cd:
             tons_map, month_lbl, err = fetch_latest_month_district_garbage_tons()
             priority_block["tonnage_month"] = month_lbl
@@ -740,7 +955,7 @@ def optimize_route_stops(
                 priority_block["error"] = "no district tonnage rows aggregated"
             else:
                 strength = max(0.0, min(1.0, float(district_priority_strength)))
-                dest_mult, meta = destination_priority_multipliers(stops, tons_map, strength=strength)
+                dest_mult, meta = destination_priority_multipliers(nn_stops, tons_map, strength=strength)
                 priority_block.update(meta)
                 priority_block["strength"] = strength
                 priority_block["note"] = (
@@ -750,14 +965,22 @@ def optimize_route_stops(
         else:
             priority_block["skipped"] = "no stop has both borough and community_district"
 
-    order = nearest_neighbor_order(
-        matrix,
-        start_index,
-        dest_priority_multipliers=dest_mult,
-    )
-    ordered = [stops[i] for i in order]
+    missed_m = _missed_multipliers(nn_stops, lc["missed_priority_boost"])
+    combined = _combine_multipliers(dest_mult, missed_m)
 
-    edge_total = sum(matrix[order[i]][order[i + 1]] for i in range(len(order) - 1))
+    order = nearest_neighbor_order(
+        work,
+        nn_start,
+        dest_priority_multipliers=combined,
+    )
+    ordered_core = [nn_stops[i] for i in order]
+    ordered = ordered_core + ([ef] if ef else [])
+
+    edge_total = sum(work[order[i]][order[i + 1]] for i in range(len(order) - 1))
+    if ef:
+        last = nn_stops[order[-1]]
+        km = haversine_km(last["lat"], last["lng"], ef["lat"], ef["lng"])
+        edge_total += (km / FALLBACK_KMH) * 3600.0
 
     route_duration_sec: Optional[float] = None
     route_distance_m: Optional[float] = None
@@ -781,7 +1004,7 @@ def optimize_route_stops(
                 route_distance_m = None
     elif use_osrm and not used_google:
         try:
-            coords = [(stops[i]["lng"], stops[i]["lat"]) for i in order]
+            coords = [(s["lng"], s["lat"]) for s in ordered]
             route_duration_sec, route_distance_m = osrm_route_totals(coords)
         except (requests.RequestException, RuntimeError, KeyError, ValueError):
             route_duration_sec = edge_total
@@ -789,8 +1012,11 @@ def optimize_route_stops(
     else:
         route_duration_sec = edge_total
 
+    svc_sec = _per_stop_service_seconds(nn_stops, lc["default_service_seconds"])
+    shift_segments = _shift_segments(order, work, nn_stops, svc_sec, lc["shift_max_seconds"] or 0.0)
+
     disclaimer_parts = [
-        "Heuristic order (nearest neighbor on travel-time matrix).",
+        "Weighted greedy order on travel-time matrix (missed-stop boost + optional stream penalty + district tonnage).",
         "Public OSRM has rate limits; Google calls use your Maps billing account.",
     ]
     if used_google:
@@ -820,10 +1046,21 @@ def optimize_route_stops(
             "District priority uses latest-month garbage tons per community district from NYC Open Data (ebb7-mvp5); "
             "it biases stop order—it is not a DSNY dispatch rule."
         )
+    if lc["service_type_switch_penalty_sec"] > 0:
+        disclaimer_parts.append(
+            "Extra seconds were added when switching refuse/recycling/organics stream—tunable planning penalty, not a city rule."
+        )
+    if lc["missed_priority_boost"] > 0 and any(s.get("missed_prior_visit") for s in nn_stops):
+        disclaimer_parts.append("Missed-prior stops get a higher visit priority in the greedy score.")
+    if sf or ef:
+        disclaimer_parts.append(
+            "Start/end facilities are bookends only—verify DOT truck legality at NYC truck-route layers."
+        )
 
     result: dict[str, Any] = {
         "ordered_stops": ordered,
         "order_indices": order,
+        "order_indices_note": "Indices refer to the working stop list (start_facility + your stops), not counting end_facility.",
         "matrix_kind": matrix_kind,
         "total_edge_duration_sec": round(edge_total, 1),
         "route_duration_sec": round(route_duration_sec, 1) if route_duration_sec is not None else None,
@@ -835,6 +1072,13 @@ def optimize_route_stops(
         "truck_profile_applied": truck_aware,
         "disclaimer": " ".join(disclaimer_parts),
         "district_priority": priority_block,
+        "planning": {
+            "purpose": "education_what_if",
+            "solver": "weighted_greedy",
+            "note": "Not DSNY dispatch—fast planning sketch using coordinates + optional published tonnage.",
+        },
+        "constraints_applied": {k: v for k, v in lc.items() if v is not None and v != ""},
+        "shift_segments": shift_segments or None,
     }
     if truck_aware:
         result["nyc_truck_resources"] = NYC_TRUCK_RESOURCES
